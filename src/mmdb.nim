@@ -3,6 +3,8 @@ import tables
 import hashes
 import math
 import strutils
+import options
+import bitops
 
 const
   MetadataMarker = collect(newSeq):
@@ -50,9 +52,12 @@ type
     of mdkFloat:
       floatVal*: float32
   MMDB* = object
-    metadata*: MMDBData
+    metadata*: Option[MMDBData]
     f: File
     size: int
+
+proc toMMDB(stringVal: string): MMDBData =
+  MMDBData(kind: mdkString, stringVal: stringVal)
 
 proc hash(x: MMDBData): Hash =
   var h: Hash = 0
@@ -87,6 +92,14 @@ proc hash(x: MMDBData): Hash =
 
 proc `==`(a, b: MMDBData): bool =
   a.hash == b.hash
+
+# bit and byte helpers #
+
+proc getBit[T: SomeInteger](v: T; bit: BitsRange[T]): uint8 {.inline.} =
+  if v.testBit(bit):
+    1'u8
+  else:
+    0'u8
 
 # file helpers #
 
@@ -146,8 +159,32 @@ proc readControlByte(f: File): (MMDBDataKind, int) =
 
 proc decode(mmdb: MMDB): MMDBData
 
-proc decodePointer(mmdb: MMDB; size: int): MMDBData =
-  raise newException(ValueError, "decodePointer is not yet implemented")
+proc decodePointer(mmdb: MMDB; value: int): MMDBData =
+  let
+    metadata = mmdb.metadata.get.mapVal
+    # first two bits indicate size
+    size = 2*value.getBit(3 + 0) + value.getBit(3 + 1)
+    # last three bits are used for the address
+    addrPart = 3*value.getBit(3 + 2) + 2*value.getBit(3 + 3) + value.getBit(3 + 4)
+    dataSectionStart = 16 + ((metadata["record_size".toMMDB].u64Val * 2) div 8) * metadata["node_count".toMMDB].u64Val  # given formula
+    p: uint64 =
+      if size == 0:
+        (2'u64 ^ 8)*addrPart + mmdb.f.readByte()
+      elif size == 1:
+        (2'u64 ^ 16)*addrPart + (2'u8 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 2048'u64
+      elif size == 2:
+        (2'u64 ^ 24)*addrPart + (2'u8 ^ 16)*mmdb.f.readByte() + (2'u8 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 526336'u64
+      elif size == 3:
+        mmdb.f.readNumber(4)
+      else:
+        raise newException(ValueError, "invalid pointer size " & $size)
+    absoluteOffset = dataSectionStart + p
+    localPos = mmdb.f.getFilePos()
+
+  mmdb.f.setFilePos(absoluteOffset.int64)
+  result = mmdb.decode()
+
+  mmdb.f.setFilePos(localPos)
 
 proc decodeString(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkString)
@@ -248,9 +285,53 @@ proc getMetadataPos(mmdb: MMDB): int =
 
 proc readMetadata(mmdb: var MMDB) =
   mmdb.f.setFilePos(mmdb.getMetadataPos())
-  mmdb.metadata = mmdb.decode()
+  mmdb.metadata = some(mmdb.decode())
 
 # public methods #
+
+proc lookup*(mmdb: MMDB; ipAddr: seq[uint8]): MMDBData =
+  if mmdb.metadata.isNone:
+    raise newException(ValueError, "No database is open.")
+  if mmdb.metadata.get.kind != mdkMap:
+    raise newException(ValueError, "Invalid metadata; expected " & $mdkMap & ", got " & $mmdb.metadata.get.kind)
+
+  let
+    metadata = mmdb.metadata.get.mapVal
+    recordSizeBits: uint64 = metadata["record_size".toMMDB].u64Val
+    nodeSizeBits: uint64 = 2 * recordSizeBits
+    nodeCount: uint64 = metadata["node_count".toMMDB].u64Val
+    treeSize: uint64 = ((recordSizeBits.int * 2) div 8).uint64 * nodeCount.uint64
+
+  if metadata["ip_version".toMMDB].u64Val != 6.uint64:
+    raise newException(ValueError, "Only IPv6 databases are supported for now")
+  if recordSizeBits != 24:
+    raise newException(ValueError, "Only record size 24 is supported for now")
+  
+  mmdb.f.setFilePos((96 * nodeSizeBits div 8).int64)  # skip first 96 nodes (assume IPv4)
+
+  for b in 0..ipAddr.high:
+    for j in 0..<8:
+      let bit = b.testBit(j)
+      stderr.writeLine "bit = " & (if bit: '1' else: '0')
+
+      if bit == true:  # right record
+        mmdb.f.setFilePos((recordSizeBits div 8).int64, fspCur)
+      # else, if left record, we are already in the correct position
+
+      let recordVal = mmdb.f.readNumber((recordSizeBits div 8).int)
+      stderr.writeLine "recordVal = " & $recordVal
+
+      if recordVal < nodeCount:
+        stderr.writeLine "recordVal < nodeCount. Jump to another node."
+        let absoluteOffset = recordVal * nodeSizeBits div 8;
+        mmdb.f.setFilePos(absoluteOffset.int64)
+      elif recordVal == nodeCount:
+        raise newException(KeyError, "IP address does not exist in database")
+      else: # recordVal > nodeCount
+        stderr.writeLine "recordVal > nodeCount. Read data from pointer."
+        let absoluteOffset = (recordVal - nodeCount) + treeSize  # given formula
+        mmdb.f.setFilePos(absoluteOffset.int64)
+        return mmdb.decode()
 
 proc openFile*(mmdb: var MMDB; filename: string) =
   mmdb.f = open(filename, fmRead)
