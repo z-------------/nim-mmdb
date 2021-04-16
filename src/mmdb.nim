@@ -340,7 +340,7 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
   if recordSizeBits != 24:
     raise newException(ValueError, "Only record size 24 is supported for now")
   
-  mmdb.f.setFilePos((96 * nodeSizeBits div 8).int64)  # skip first 96 nodes (assume IPv4)
+  mmdb.f.setFilePos(0)  # go to root node
 
   for b in ipAddr:
     for j in 0..<8:
@@ -363,15 +363,17 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
         return mmdb.decode()
 
 proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
-  let ipAddrObj = parseIpAddress(ipAddrStr)
-  if ipAddrObj.family != IpAddressFamily.IPv4:
-    raise newException(ValueError, "Only IPv4 addresses are supported for now")
-  
+  let ipAddrObj = parseIpAddress(ipAddrStr)  
   case ipAddrObj.family
   of IpAddressFamily.IPv6:
     lookup(mmdb, ipAddrObj.address_v6)
   of IpAddressFamily.IPv4:
-    lookup(mmdb, ipAddrObj.address_v4)
+    var addrV4Padded: array[0..15, uint8]
+    for i in 0..11:
+      addrV4Padded[i] = 0
+    for i in 0..3:
+      addrV4Padded[12 + i] = ipAddrObj.address_v4[i]
+    lookup(mmdb, addrV4Padded)
 
 proc openFile*(mmdb: var MMDB; filename: string) =
   mmdb.f = open(filename, fmRead)
