@@ -56,6 +56,8 @@ type
     f: File
     size: int
 
+# MMDBData methods #
+
 proc toMMDB(stringVal: string): MMDBData =
   MMDBData(kind: mdkString, stringVal: stringVal)
 
@@ -93,10 +95,43 @@ proc hash(x: MMDBData): Hash =
 proc `==`(a, b: MMDBData): bool =
   a.hash == b.hash
 
+proc `[]`*(x: MMDBData; key: MMDBData): MMDBData =
+  if x.kind != mdkMap:
+    raise newException(ValueError, "Expected kind " & $mdkMap)
+  x.mapVal[key]
+
+proc `[]`*(x: MMDBData; key: string): MMDBData =
+  x[key.toMMDB]
+
+proc `$`*(x: MMDBData): string =
+  case x.kind
+  of mdkNone, mdkPointer:
+    $x
+  of mdkString:
+    $x.stringVal
+  of mdkDouble:
+    $x.doubleVal
+  of mdkBytes:
+    $x.bytesVal
+  of mdkU16, mdkU32, mdkU64:
+    $x.u64Val
+  of mdkU128:
+    $x.u128Val
+  of mdkI32:
+    $x.i32Val
+  of mdkMap:
+    $x.mapVal
+  of mdkArray:
+    $x.arrayVal
+  of mdkBoolean:
+    $x.booleanVal
+  of mdkFloat:
+    $x.floatVal
+
 # bit and byte helpers #
 
 proc getBit[T: SomeInteger](v: T; bit: BitsRange[T]): uint8 {.inline.} =
-  if v.testBit(bit):
+  if v.testBit(7 - bit):
     1'u8
   else:
     0'u8
@@ -134,7 +169,7 @@ proc readByte(f: File): uint8 =
 proc readNumber(f: File; size: int): uint64 =
   for i in countdown(size - 1, 0):
     let n = f.readByte()
-    result += n * (256 ^ i).uint8
+    result += n * (256 ^ i).uint64
 
 proc readControlByte(f: File): (MMDBDataKind, int) =
   let
@@ -245,8 +280,6 @@ proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
   discard mmdb.f.readBuffer(result.floatVal.addr, 4)
 
 proc decode(mmdb: MMDB): MMDBData =
-  echo mmdb.f.getFilePos().toHex
-
   let (dataFormat, dataSize) = mmdb.f.readControlByte()
   result = case dataFormat
     of mdkPointer:
@@ -309,29 +342,37 @@ proc lookup*(mmdb: MMDB; ipAddr: seq[uint8]): MMDBData =
   
   mmdb.f.setFilePos((96 * nodeSizeBits div 8).int64)  # skip first 96 nodes (assume IPv4)
 
-  for b in 0..ipAddr.high:
+  for b in ipAddr:
     for j in 0..<8:
-      let bit = b.testBit(j)
-      stderr.writeLine "bit = " & (if bit: '1' else: '0')
+      let bit = b.getBit(j)
 
-      if bit == true:  # right record
+      if bit == 1:  # right record
         mmdb.f.setFilePos((recordSizeBits div 8).int64, fspCur)
       # else, if left record, we are already in the correct position
 
       let recordVal = mmdb.f.readNumber((recordSizeBits div 8).int)
-      stderr.writeLine "recordVal = " & $recordVal
 
       if recordVal < nodeCount:
-        stderr.writeLine "recordVal < nodeCount. Jump to another node."
-        let absoluteOffset = recordVal * nodeSizeBits div 8;
+        let absoluteOffset = recordVal * nodeSizeBits div 8
         mmdb.f.setFilePos(absoluteOffset.int64)
       elif recordVal == nodeCount:
         raise newException(KeyError, "IP address does not exist in database")
       else: # recordVal > nodeCount
-        stderr.writeLine "recordVal > nodeCount. Read data from pointer."
         let absoluteOffset = (recordVal - nodeCount) + treeSize  # given formula
         mmdb.f.setFilePos(absoluteOffset.int64)
         return mmdb.decode()
+
+proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
+  var
+    ipAddrBytes: seq[uint8]
+    partsCount = 0
+  for part in ipAddrStr.split('.'):
+    partsCount.inc
+    ipAddrBytes.add(part.parseUInt().uint8)
+  if partsCount != 4:
+    raise newException(ValueError, "Only IPv4 addresses are supported for now")
+
+  lookup(mmdb, ipAddrBytes)
 
 proc openFile*(mmdb: var MMDB; filename: string) =
   mmdb.f = open(filename, fmRead)
@@ -341,4 +382,5 @@ proc openFile*(mmdb: var MMDB; filename: string) =
 when isMainModule:
   var mmdb: MMDB
   mmdb.openFile("dbip-lite.mmdb")
-  echo mmdb.metadata
+  let info = mmdb.lookup("1.1.1.1")
+  echo $info["country"]["names"]["en"] & " (" & $info["country"]["iso_code"] & ")"
