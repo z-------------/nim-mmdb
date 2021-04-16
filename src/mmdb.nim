@@ -136,6 +136,12 @@ proc getBit[T: SomeInteger](v: T; bit: BitsRange[T]): uint8 {.inline.} =
   else:
     0'u8
 
+proc padIPv4Address(ipv4: array[0..3, uint8]): array[0..15, uint8] =
+  for i in 0..11:
+    result[i] = 0
+  for i in 0..3:
+    result[12 + i] = ipv4[i]
+
 # file helpers #
 
 proc rFind(f: File; needle: seq[uint8]): int =
@@ -363,17 +369,15 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
         return mmdb.decode()
 
 proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
-  let ipAddrObj = parseIpAddress(ipAddrStr)  
-  case ipAddrObj.family
-  of IpAddressFamily.IPv6:
-    lookup(mmdb, ipAddrObj.address_v6)
-  of IpAddressFamily.IPv4:
-    var addrV4Padded: array[0..15, uint8]
-    for i in 0..11:
-      addrV4Padded[i] = 0
-    for i in 0..3:
-      addrV4Padded[12 + i] = ipAddrObj.address_v4[i]
-    lookup(mmdb, addrV4Padded)
+  let
+    ipAddrObj = parseIpAddress(ipAddrStr)
+    ipAddrBytes =
+      case ipAddrObj.family
+      of IpAddressFamily.IPv6:
+        ipAddrObj.address_v6
+      of IpAddressFamily.IPv4:
+        padIPv4Address(ipAddrObj.address_v4)
+  mmdb.lookup(ipAddrBytes)
 
 proc openFile*(mmdb: var MMDB; filename: string) =
   mmdb.f = open(filename, fmRead)
