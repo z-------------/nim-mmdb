@@ -79,16 +79,17 @@ proc hash(x: MMDBData): Hash =
       x.u128Val.hash
     of mdkI32:
       x.i32Val.hash
-    # of mdkMap:
-    #   x.mapVal.hash
+    of mdkMap:
+      var mapHash: Hash = 0
+      for k, v in x.mapVal.pairs:
+        mapHash = mapHash !& k.hash !& v.hash
+      mapHash
     of mdkArray:
       x.arrayVal.hash
     of mdkBoolean:
       x.booleanVal.hash
     of mdkFloat:
       x.floatVal.hash
-    else:
-      raise newException(ValueError, "Can't use " & $x.kind & " data as map key")
   h = h !& atomHash
   result = !$h
 
