@@ -203,12 +203,12 @@ proc decode(mmdb: MMDB): MMDBData
 
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
-    metadata = mmdb.metadata.get.mapVal
+    metadata = mmdb.metadata.get
     # first two bits indicate size
     size = 2*value.getBit(3 + 0) + value.getBit(3 + 1)
     # last three bits are used for the address
     addrPart = 3*value.getBit(3 + 2) + 2*value.getBit(3 + 3) + value.getBit(3 + 4)
-    dataSectionStart = 16 + ((metadata["record_size".toMMDB].u64Val * 2) div 8) * metadata["node_count".toMMDB].u64Val  # given formula
+    dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) div 8) * metadata["node_count"].u64Val  # given formula
     p: uint64 =
       if size == 0:
         (2'u64 ^ 8)*addrPart + mmdb.f.readByte()
@@ -324,13 +324,13 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
     raise newException(ValueError, "Invalid metadata; expected " & $mdkMap & ", got " & $mmdb.metadata.get.kind)
 
   let
-    metadata = mmdb.metadata.get.mapVal
-    recordSizeBits: uint64 = metadata["record_size".toMMDB].u64Val
+    metadata = mmdb.metadata.get
+    recordSizeBits: uint64 = metadata["record_size"].u64Val
     nodeSizeBits: uint64 = 2 * recordSizeBits
-    nodeCount: uint64 = metadata["node_count".toMMDB].u64Val
+    nodeCount: uint64 = metadata["node_count"].u64Val
     treeSize: uint64 = ((recordSizeBits.int * 2) div 8).uint64 * nodeCount.uint64
 
-  if metadata["ip_version".toMMDB].u64Val != 6.uint64:
+  if metadata["ip_version"].u64Val != 6'u64:
     raise newException(ValueError, "Only IPv6 databases are supported for now")
   if recordSizeBits != 24:
     raise newException(ValueError, "Only record size 24 is supported for now")
