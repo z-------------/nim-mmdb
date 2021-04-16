@@ -377,6 +377,10 @@ proc openFile*(mmdb: var MMDB; filename: string) =
   mmdb.f = open(filename, fmRead)
   mmdb.readMetadata()
 
+proc openFile*(mmdb: var MMDB; file: File) =
+  mmdb.f = file
+  mmdb.readMetadata()
+
 
 when isMainModule:
   var mmdb: MMDB
