@@ -2,9 +2,9 @@ import sugar
 import tables
 import hashes
 import math
-import strutils
 import options
 import bitops
+import net
 
 const
   MetadataMarker = collect(newSeq):
@@ -322,7 +322,7 @@ proc readMetadata(mmdb: var MMDB) =
 
 # public methods #
 
-proc lookup*(mmdb: MMDB; ipAddr: seq[uint8]): MMDBData =
+proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
   if mmdb.metadata.isNone:
     raise newException(ValueError, "No database is open.")
   if mmdb.metadata.get.kind != mdkMap:
@@ -363,16 +363,15 @@ proc lookup*(mmdb: MMDB; ipAddr: seq[uint8]): MMDBData =
         return mmdb.decode()
 
 proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
-  var
-    ipAddrBytes: seq[uint8]
-    partsCount = 0
-  for part in ipAddrStr.split('.'):
-    partsCount.inc
-    ipAddrBytes.add(part.parseUInt().uint8)
-  if partsCount != 4:
+  let ipAddrObj = parseIpAddress(ipAddrStr)
+  if ipAddrObj.family != IpAddressFamily.IPv4:
     raise newException(ValueError, "Only IPv4 addresses are supported for now")
-
-  lookup(mmdb, ipAddrBytes)
+  
+  case ipAddrObj.family
+  of IpAddressFamily.IPv6:
+    lookup(mmdb, ipAddrObj.address_v6)
+  of IpAddressFamily.IPv4:
+    lookup(mmdb, ipAddrObj.address_v4)
 
 proc openFile*(mmdb: var MMDB; filename: string) =
   mmdb.f = open(filename, fmRead)
