@@ -244,16 +244,8 @@ proc decodeBytes(mmdb: MMDB; size: int): MMDBData =
   else:
     result.bytesVal = mmdb.f.readBytes(size)
 
-proc decodeU16(mmdb: MMDB; size: int): MMDBData =
-  result = MMDBData(kind: mdkU16)
-  result.u64Val = mmdb.f.readNumber(size)
-
-proc decodeU32(mmdb: MMDB; size: int): MMDBData =
-  result = MMDBData(kind: mdkU32)
-  result.u64Val = mmdb.f.readNumber(size)
-
-proc decodeU64(mmdb: MMDB; size: int): MMDBData =
-  result = MMDBData(kind: mdkU64)
+proc decodeUInt(mmdb: MMDB; size: int; kind: MMDBDataKind): MMDBData =
+  result = MMDBData(kind: kind)
   result.u64Val = mmdb.f.readNumber(size)
 
 proc decodeU128(mmdb: MMDB; size: int): MMDBData =
@@ -287,8 +279,8 @@ proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
   discard mmdb.f.readBuffer(result.floatVal.addr, 4)
 
 proc decode(mmdb: MMDB): MMDBData =
-  let (dataFormat, dataSize) = mmdb.f.readControlByte()
-  result = case dataFormat
+  let (dataKind, dataSize) = mmdb.f.readControlByte()
+  result = case dataKind
     of mdkPointer:
       mmdb.decodePointer(dataSize)
     of mdkString:
@@ -297,12 +289,8 @@ proc decode(mmdb: MMDB): MMDBData =
       mmdb.decodeDouble(dataSize)
     of mdkBytes:
       mmdb.decodeBytes(dataSize)
-    of mdkU16:
-      mmdb.decodeU16(dataSize)
-    of mdkU32:
-      mmdb.decodeU32(dataSize)
-    of mdkU64:
-      mmdb.decodeU64(dataSize)
+    of mdkU16, mdkU32, mdkU64:
+      mmdb.decodeUInt(dataSize, dataKind)
     of mdkU128:
       mmdb.decodeU128(dataSize)
     of mdkI32:
@@ -316,7 +304,7 @@ proc decode(mmdb: MMDB): MMDBData =
     of mdkFloat:
       mmdb.decodeFloat(dataSize)
     else:
-      raise newException(ValueError, "Can't deal with format " & $dataFormat)
+      raise newException(ValueError, "Can't deal with format " & $dataKind)
 
 # metadata #
 
