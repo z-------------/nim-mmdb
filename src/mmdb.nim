@@ -206,9 +206,9 @@ proc decodePointer(mmdb: MMDB; value: int): MMDBData =
       if size == 0:
         (2'u64 ^ 8)*addrPart + mmdb.f.readByte()
       elif size == 1:
-        (2'u64 ^ 16)*addrPart + (2'u8 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 2048'u64
+        (2'u64 ^ 16)*addrPart + (2'u64 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 2048'u64
       elif size == 2:
-        (2'u64 ^ 24)*addrPart + (2'u8 ^ 16)*mmdb.f.readByte() + (2'u8 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 526336'u64
+        (2'u64 ^ 24)*addrPart + (2'u64 ^ 16)*mmdb.f.readByte() + (2'u64 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 526336'u64
       elif size == 3:
         mmdb.f.readNumber(4)
       else:
