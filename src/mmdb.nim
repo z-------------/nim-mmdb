@@ -376,9 +376,15 @@ proc openFile*(mmdb: var MMDB; file: File) =
   mmdb.f = file
   mmdb.readMetadata()
 
+proc initMMDB*(filename: string): MMDB =
+  result.openFile(filename)
+
+proc initMMDB*(file: File): MMDB =
+  result.openFile(file)
+
 
 when isMainModule:
-  var mmdb: MMDB
-  mmdb.openFile("dbip-lite.mmdb")
-  let info = mmdb.lookup("1.1.1.1")
+  let
+    mmdb = initMMDB("dbip-lite.mmdb")
+    info = mmdb.lookup("1.1.1.1")
   echo $info["country"]["names"]["en"] & " (" & $info["country"]["iso_code"] & ")"
