@@ -201,7 +201,7 @@ proc readControlByte(s: Stream): (MMDBDataKind, int) =
 
 # data decode #
 
-proc decode(mmdb: MMDB): MMDBData
+proc decode*(mmdb: MMDB): MMDBData
 
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
@@ -279,7 +279,7 @@ proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkFloat)
   result.floatVal = mmdb.s.readFloat32()
 
-proc decode(mmdb: MMDB): MMDBData =
+proc decode*(mmdb: MMDB): MMDBData =
   let (dataKind, dataSize) = mmdb.s.readControlByte()
   result = case dataKind
     of mdkPointer:
