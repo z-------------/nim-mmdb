@@ -1,15 +1,13 @@
-import sugar
 import tables
 import hashes
 import math
 import options
 import bitops
 import net
+import streams
 
 const
-  MetadataMarker = collect(newSeq):
-    for c in "\xab\xcd\xefMaxMind.com":
-      c.uint8
+  MetadataMarker = "\xab\xcd\xefMaxMind.com"
 
 type
   MMDBDataKind* = enum
@@ -36,11 +34,11 @@ type
     of mdkDouble:
       doubleVal*: float64
     of mdkBytes:
-      bytesVal*: seq[uint8]
+      bytesVal*: string
     of mdkU16, mdkU32, mdkU64:
       u64Val*: uint64
     of mdkU128:
-      u128Val*: seq[uint8]  # any better ideas?
+      u128Val*: string  # any better ideas?
     of mdkI32:
       i32Val*: int32
     of mdkMap:
@@ -53,7 +51,7 @@ type
       floatVal*: float32
   MMDB* = object
     metadata*: Option[MMDBData]
-    f: File
+    s: Stream
     size: int
 
 # MMDBData methods #
@@ -143,57 +141,61 @@ proc padIPv4Address(ipv4: array[0..3, uint8]): array[0..15, uint8] =
   for i in 0..3:
     result[12 + i] = ipv4[i]
 
-# file helpers #
+# stream helpers #
 
-proc rFind(f: File; needle: seq[uint8]): int =
-  let
-    needleLen = needle.len
-    fileLen = f.getFileSize().int
-  var
-    i = needleLen
-    buf = newSeq[uint8](needleLen)
+proc setPosition(s: Stream; pos: int; relativeTo = fspSet; streamSize: int = -1) =
+  case relativeTo
+  of fspSet:
+    streams.setPosition(s, pos)
+  of fspCur:
+    streams.setPosition(s, s.getPosition() + pos)
+  of fspEnd:
+    assert streamSize >= 0
+    streams.setPosition(s, streamSize + pos)
 
-  f.setFilePos(-i, fspEnd)
+proc rFind(s: Stream; streamSize: int; needle: string): int =
+  let needleLen = needle.len
+  var i = needleLen
+
+  s.setPosition(-i, fspEnd, streamSize)
 
   while true:
-    discard f.readBytes(buf, 0, needleLen)
+    let buf = s.readStr(needleLen)
     if buf == needle:
-      return fileLen - i
-    if i == fileLen:
+      return streamSize - i
+    if i == streamSize:
       break
     i.inc()
-    f.setFilePos(-i, fspEnd)
+    s.setPosition(-i, fspEnd, streamSize)
   
   return -1
 
-proc readBytes(f: File; size: int): seq[uint8] =
-  result = newSeq[uint8](size)
-  discard f.readBytes(result, 0, size)
+proc readBytes(s: Stream; size: int): string =
+  s.readStr(size)
 
-proc readByte(f: File): uint8 =
-  f.readBytes(1)[0]
+proc readByte(s: Stream): uint8 =
+  s.readBytes(1)[0].uint8
 
-proc readNumber(f: File; size: int): uint64 =
+proc readNumber(s: Stream; size: int): uint64 =
   for i in countdown(size - 1, 0):
-    let n = f.readByte()
+    let n = s.readUint8()
     result += n * (256 ^ i).uint64
 
-proc readControlByte(f: File): (MMDBDataKind, int) =
-  let
-    controlByte = f.readByte()
+proc readControlByte(s: Stream): (MMDBDataKind, int) =
+  let controlByte = s.readByte()
   var
     dataFormat = controlByte shr 5
     dataSize = (controlByte and 31).int  # 0d31 = 0b00011111
 
   if dataFormat == 0:  # extended
-    dataFormat = 7 + f.readByte()
+    dataFormat = 7 + s.readByte()
 
   if dataSize == 29:
-    dataSize = 29 + f.readByte().int
+    dataSize = 29 + s.readByte().int
   elif dataSize == 30:
-    dataSize = 285 + (2 ^ 8)*f.readByte().int + f.readByte().int
+    dataSize = 285 + (2 ^ 8)*s.readByte().int + s.readByte().int
   elif dataSize == 31:
-    dataSize = 65821 + (2 ^ 16)*f.readByte().int + (2 ^ 8)*f.readByte().int + f.readByte().int
+    dataSize = 65821 + (2 ^ 16)*s.readByte().int + (2 ^ 8)*s.readByte().int + s.readByte().int
 
   (MMDBDataKind(dataFormat), dataSize)
 
@@ -211,50 +213,49 @@ proc decodePointer(mmdb: MMDB; value: int): MMDBData =
     dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) div 8) * metadata["node_count"].u64Val  # given formula
     p: uint64 =
       if size == 0:
-        (2'u64 ^ 8)*addrPart + mmdb.f.readByte()
+        (2'u64 ^ 8)*addrPart + mmdb.s.readByte()
       elif size == 1:
-        (2'u64 ^ 16)*addrPart + (2'u64 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 2048'u64
+        (2'u64 ^ 16)*addrPart + (2'u64 ^ 8)*mmdb.s.readByte() + mmdb.s.readByte() + 2048'u64
       elif size == 2:
-        (2'u64 ^ 24)*addrPart + (2'u64 ^ 16)*mmdb.f.readByte() + (2'u64 ^ 8)*mmdb.f.readByte() + mmdb.f.readByte() + 526336'u64
+        (2'u64 ^ 24)*addrPart + (2'u64 ^ 16)*mmdb.s.readByte() + (2'u64 ^ 8)*mmdb.s.readByte() + mmdb.s.readByte() + 526336'u64
       elif size == 3:
-        mmdb.f.readNumber(4)
+        mmdb.s.readNumber(4)
       else:
         raise newException(ValueError, "invalid pointer size " & $size)
     absoluteOffset = dataSectionStart + p
-    localPos = mmdb.f.getFilePos()
+    localPos = mmdb.s.getPosition()
 
-  mmdb.f.setFilePos(absoluteOffset.int64)
+  mmdb.s.setPosition(absoluteOffset.int)
   result = mmdb.decode()
 
-  mmdb.f.setFilePos(localPos)
+  mmdb.s.setPosition(localPos)
 
 proc decodeString(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkString)
-  result.stringVal = newString(size)
-  discard mmdb.f.readChars(result.stringVal, 0, size)
+  result.stringVal = mmdb.s.readStr(size)
 
 proc decodeDouble(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkDouble)
-  discard mmdb.f.readBuffer(result.doubleVal.addr, 8)
+  result.doubleVal = mmdb.s.readFloat64()
 
 proc decodeBytes(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkBytes)
   if size == 0:
-    result.bytesVal = newSeqOfCap[uint8](0)
+    result.bytesVal = ""
   else:
-    result.bytesVal = mmdb.f.readBytes(size)
+    result.bytesVal = mmdb.s.readBytes(size)
 
 proc decodeUInt(mmdb: MMDB; size: int; kind: MMDBDataKind): MMDBData =
   result = MMDBData(kind: kind)
-  result.u64Val = mmdb.f.readNumber(size)
+  result.u64Val = mmdb.s.readNumber(size)
 
 proc decodeU128(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkU128)
-  result.u128Val = mmdb.f.readBytes(size)
+  result.u128Val = mmdb.s.readBytes(size)
 
 proc decodeI32(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkI32)
-  discard mmdb.f.readBuffer(result.i32Val.addr, size)
+  result.i32Val = mmdb.s.readInt32()
 
 proc decodeMap(mmdb: MMDB; entryCount: int): MMDBData =
   result = MMDBData(kind: mdkMap)
@@ -276,10 +277,10 @@ proc decodeBoolean(mmdb: MMDB; value: int): MMDBData =
 
 proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkFloat)
-  discard mmdb.f.readBuffer(result.floatVal.addr, 4)
+  result.floatVal = mmdb.s.readFloat32()
 
 proc decode(mmdb: MMDB): MMDBData =
-  let (dataKind, dataSize) = mmdb.f.readControlByte()
+  let (dataKind, dataSize) = mmdb.s.readControlByte()
   result = case dataKind
     of mdkPointer:
       mmdb.decodePointer(dataSize)
@@ -309,10 +310,10 @@ proc decode(mmdb: MMDB): MMDBData =
 # metadata #
 
 proc getMetadataPos(mmdb: MMDB): int =
-  mmdb.f.rFind(MetadataMarker) + MetadataMarker.len
+  mmdb.s.rFind(mmdb.size, MetadataMarker) + MetadataMarker.len
 
 proc readMetadata(mmdb: var MMDB) =
-  mmdb.f.setFilePos(mmdb.getMetadataPos())
+  mmdb.s.setPosition(mmdb.getMetadataPos())
   mmdb.metadata = some(mmdb.decode())
 
 # public methods #
@@ -335,26 +336,26 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
   if recordSizeBits != 24:
     raise newException(ValueError, "Only record size 24 is supported for now")
   
-  mmdb.f.setFilePos(0)  # go to root node
+  mmdb.s.setPosition(0)  # go to root node
 
   for b in ipAddr:
     for j in 0..<8:
       let bit = b.getBit(j)
 
       if bit == 1:  # right record
-        mmdb.f.setFilePos((recordSizeBits div 8).int64, fspCur)
+        mmdb.s.setPosition((recordSizeBits div 8).int, fspCur)
       # else, if left record, we are already in the correct position
 
-      let recordVal = mmdb.f.readNumber((recordSizeBits div 8).int)
+      let recordVal = mmdb.s.readNumber((recordSizeBits div 8).int)
 
       if recordVal < nodeCount:
         let absoluteOffset = recordVal * nodeSizeBits div 8
-        mmdb.f.setFilePos(absoluteOffset.int64)
+        mmdb.s.setPosition(absoluteOffset.int)
       elif recordVal == nodeCount:
         raise newException(KeyError, "IP address does not exist in database")
       else: # recordVal > nodeCount
         let absoluteOffset = (recordVal - nodeCount) + treeSize  # given formula
-        mmdb.f.setFilePos(absoluteOffset.int64)
+        mmdb.s.setPosition(absoluteOffset.int)
         return mmdb.decode()
 
 proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
@@ -368,13 +369,17 @@ proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
         padIPv4Address(ipAddrObj.address_v4)
   mmdb.lookup(ipAddrBytes)
 
-proc openFile*(mmdb: var MMDB; filename: string) =
-  mmdb.f = open(filename, fmRead)
+proc openFile*(mmdb: var MMDB; stream: Stream) =
+  mmdb.s = stream
   mmdb.readMetadata()
 
 proc openFile*(mmdb: var MMDB; file: File) =
-  mmdb.f = file
-  mmdb.readMetadata()
+  mmdb.size = file.getFileSize().int
+  mmdb.openFile(newFileStream(file))
+
+proc openFile*(mmdb: var MMDB; filename: string) =
+  let file = open(filename, fmRead)
+  mmdb.openFile(file)
 
 proc initMMDB*(filename: string): MMDB =
   result.openFile(filename)
@@ -384,7 +389,7 @@ proc initMMDB*(file: File): MMDB =
 
 
 when isMainModule:
-  let
-    mmdb = initMMDB("dbip-lite.mmdb")
-    info = mmdb.lookup("1.1.1.1")
+  let mmdb = initMMDB("dbip-lite.mmdb")
+  echo mmdb.metadata
+  let info = mmdb.lookup("1.1.1.1")
   echo $info["country"]["names"]["en"] & " (" & $info["country"]["iso_code"] & ")"
