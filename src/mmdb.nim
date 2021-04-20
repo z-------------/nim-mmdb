@@ -5,6 +5,7 @@ import options
 import bitops
 import net
 import streams
+import endians
 
 const
   MetadataMarker = "\xab\xcd\xefMaxMind.com"
@@ -51,15 +52,15 @@ type
       floatVal*: float32
   MMDB* = object
     metadata*: Option[MMDBData]
-    s: Stream
+    s*: Stream
     size: int
 
 # MMDBData methods #
 
-proc toMMDB(stringVal: string): MMDBData =
+proc toMMDB*(stringVal: string): MMDBData =
   MMDBData(kind: mdkString, stringVal: stringVal)
 
-proc hash(x: MMDBData): Hash =
+proc hash*(x: MMDBData): Hash =
   var h: Hash = 0
   h = h !& x.kind.ord
   let atomHash = case x.kind
@@ -91,7 +92,7 @@ proc hash(x: MMDBData): Hash =
   h = h !& atomHash
   result = !$h
 
-proc `==`(a, b: MMDBData): bool =
+proc `==`*(a, b: MMDBData): bool =
   a.hash == b.hash
 
 proc `[]`*(x: MMDBData; key: MMDBData): MMDBData =
@@ -140,6 +141,10 @@ proc padIPv4Address(ipv4: array[0..3, uint8]): array[0..15, uint8] =
     result[i] = 0
   for i in 0..3:
     result[12 + i] = ipv4[i]
+
+proc `+@`(p: pointer; offset: int): pointer =
+  ## Pointer offset
+  cast[pointer](cast[int](p) + offset)
 
 # stream helpers #
 
@@ -203,6 +208,10 @@ proc readControlByte(s: Stream): (MMDBDataKind, int) =
 
 proc decode*(mmdb: MMDB): MMDBData
 
+proc decode*(s: Stream): MMDBData
+
+proc decodeData(s: Stream; dataKind: MMDBDataKind; dataSize: int): MMDBData
+
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
     metadata = mmdb.metadata.get
@@ -230,84 +239,102 @@ proc decodePointer(mmdb: MMDB; value: int): MMDBData =
 
   mmdb.s.setPosition(localPos)
 
-proc decodeString(mmdb: MMDB; size: int): MMDBData =
+proc decodeString(s: Stream; size: int): MMDBData =
   result = MMDBData(kind: mdkString)
-  result.stringVal = mmdb.s.readStr(size)
+  result.stringVal = s.readStr(size)
 
-proc decodeDouble(mmdb: MMDB; _: int): MMDBData =
+proc decodeDouble(s: Stream; _: int): MMDBData =
   result = MMDBData(kind: mdkDouble)
-  result.doubleVal = mmdb.s.readFloat64()
+  var buf: float64
+  discard s.readData(addr buf, 8)
+  bigEndian64(addr result.doubleVal, addr buf)
 
-proc decodeBytes(mmdb: MMDB; size: int): MMDBData =
+proc decodeBytes(s: Stream; size: int): MMDBData =
   result = MMDBData(kind: mdkBytes)
   if size == 0:
     result.bytesVal = ""
   else:
-    result.bytesVal = mmdb.s.readBytes(size)
+    result.bytesVal = s.readBytes(size)
 
-proc decodeUInt(mmdb: MMDB; size: int; kind: MMDBDataKind): MMDBData =
+proc decodeUInt(s: Stream; size: int; kind: MMDBDataKind): MMDBData =
   result = MMDBData(kind: kind)
-  result.u64Val = mmdb.s.readNumber(size)
+  result.u64Val = s.readNumber(size)
 
-proc decodeU128(mmdb: MMDB; size: int): MMDBData =
+proc decodeU128(s: Stream; size: int): MMDBData =
   result = MMDBData(kind: mdkU128)
-  result.u128Val = mmdb.s.readBytes(size)
+  result.u128Val = s.readBytes(size)
 
-proc decodeI32(mmdb: MMDB; size: int): MMDBData =
+proc decodeI32(s: Stream; size: int): MMDBData =
   result = MMDBData(kind: mdkI32)
-  result.i32Val = mmdb.s.readInt32()
+  var buf: int32
+  discard s.readData((addr buf) +@ (4 - size), size)
+  bigEndian32(addr result.i32Val, addr buf)
 
-proc decodeMap(mmdb: MMDB; entryCount: int): MMDBData =
+proc decodeMap(s: Stream; entryCount: int): MMDBData =
   result = MMDBData(kind: mdkMap)
   for _ in 0..<entryCount:
     let
-      key = mmdb.decode()
-      val = mmdb.decode()
+      key = s.decode()
+      val = s.decode()
     result.mapVal[key] = val
 
-proc decodeArray(mmdb: MMDB; entryCount: int): MMDBData =
+proc decodeArray(s: Stream; entryCount: int): MMDBData =
   result = MMDBData(kind: mdkArray)
   for _ in 0..<entryCount:
-    let val = mmdb.decode()
+    let val = s.decode()
     result.arrayVal.add(val)
 
-proc decodeBoolean(mmdb: MMDB; value: int): MMDBData =
+proc decodeBoolean(s: Stream; value: int): MMDBData =
   result = MMDBData(kind: mdkBoolean)
   result.booleanVal = value.bool
 
-proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
+proc decodeFloat(s: Stream; _: int): MMDBData =
   result = MMDBData(kind: mdkFloat)
-  result.floatVal = mmdb.s.readFloat32()
+  var buf: float32
+  discard s.readData(addr buf, 4)
+  bigEndian32(addr result.floatVal, addr buf)
+
+proc decodeData(s: Stream; dataKind: MMDBDataKind; dataSize: int): MMDBData =
+  result = case dataKind
+    of mdkString:
+      s.decodeString(dataSize)
+    of mdkDouble:
+      s.decodeDouble(dataSize)
+    of mdkBytes:
+      s.decodeBytes(dataSize)
+    of mdkU16, mdkU32, mdkU64:
+      s.decodeUInt(dataSize, dataKind)
+    of mdkU128:
+      s.decodeU128(dataSize)
+    of mdkI32:
+      s.decodeI32(dataSize)
+    of mdkMap:
+      s.decodeMap(dataSize)
+    of mdkArray:
+      s.decodeArray(dataSize)
+    of mdkBoolean:
+      s.decodeBoolean(dataSize)
+    of mdkFloat:
+      s.decodeFloat(dataSize)
+    of mdkPointer:
+      raise newException(ValueError, "Decoding " & $dataKind & " requires an MMDB object")
+    else:
+      raise newException(ValueError, "Can't deal with format " & $dataKind)
 
 proc decode*(mmdb: MMDB): MMDBData =
   let (dataKind, dataSize) = mmdb.s.readControlByte()
   result = case dataKind
     of mdkPointer:
       mmdb.decodePointer(dataSize)
-    of mdkString:
-      mmdb.decodeString(dataSize)
-    of mdkDouble:
-      mmdb.decodeDouble(dataSize)
-    of mdkBytes:
-      mmdb.decodeBytes(dataSize)
-    of mdkU16, mdkU32, mdkU64:
-      mmdb.decodeUInt(dataSize, dataKind)
-    of mdkU128:
-      mmdb.decodeU128(dataSize)
-    of mdkI32:
-      mmdb.decodeI32(dataSize)
-    of mdkMap:
-      mmdb.decodeMap(dataSize)
-    of mdkArray:
-      mmdb.decodeArray(dataSize)
-    of mdkBoolean:
-      mmdb.decodeBoolean(dataSize)
-    of mdkFloat:
-      mmdb.decodeFloat(dataSize)
     else:
-      raise newException(ValueError, "Can't deal with format " & $dataKind)
+      mmdb.s.decodeData(dataKind, dataSize)
+
+proc decode*(s: Stream): MMDBData =
+  let (dataKind, dataSize) = s.readControlByte()
+  s.decodeData(dataKind, dataSize)
 
 # metadata #
+# TODO: fail gracefully when metadata not found, maybe conditional on a compilation flag
 
 proc getMetadataPos(mmdb: MMDB): int =
   mmdb.s.rFind(mmdb.size, MetadataMarker) + MetadataMarker.len
