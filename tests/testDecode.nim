@@ -6,6 +6,13 @@
 import unittest
 import mmdb
 import streams
+import strutils
+
+template `*`(n: int; s: string): string =
+  s.repeat(n)
+
+template `*`(s: string; n: int): string =
+  s.repeat(n)
 
 test "array":
   let datas = {
@@ -81,6 +88,24 @@ test "int32":
     let decoded = decode(newStringStream(k))
     check decoded.kind == mdkI32
     check decoded.i32Val == expected
+
+test "string":
+  let datas = {
+    "\x40": "",
+    "\x41\x31": "1",
+    "\x43\xE4\xBA\xBA": "人",
+    "\x5b\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37": "123456789012345678901234567",
+    "\x5c\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38": "1234567890123456789012345678",
+    "\x5d\x00\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39": "12345678901234567890123456789",
+    "\x5d\x01\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x30": "123456789012345678901234567890",
+    "\x5e\x00\xd7" & 500 * "\x78": "x" * 500,
+    "\x5e\x06\xb3" & 2000 * "\x78": "x" * 2000,
+    "\x5f\x00\x10\x53" & 70000 * "\x78": "x" * 70000,
+  }
+  for _, (k, expected) in datas:
+    let decoded = decode(newStringStream(k))
+    check decoded.kind == mdkString
+    check decoded.stringVal == expected
 
 test "uint16":
   let datas = {
