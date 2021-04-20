@@ -208,29 +208,29 @@ proc readControlByte(s: Stream): (MMDBDataKind, int) =
 
 proc decode*(mmdb: MMDB): MMDBData
 
-proc decode*(s: Stream): MMDBData
-
-proc decodeData(s: Stream; dataKind: MMDBDataKind; dataSize: int): MMDBData
-
-proc decodePointer(mmdb: MMDB; value: int): MMDBData =
+proc readPointer*(s: Stream; value: int): uint64 =
   let
-    metadata = mmdb.metadata.get
     # first two bits indicate size
     size = 2*value.getBit(3 + 0) + value.getBit(3 + 1)
     # last three bits are used for the address
     addrPart = 3*value.getBit(3 + 2) + 2*value.getBit(3 + 3) + value.getBit(3 + 4)
+  case size
+    of 0:
+      (2'u64 ^ 8)*addrPart + s.readByte()
+    of 1:
+      (2'u64 ^ 16)*addrPart + (2'u64 ^ 8)*s.readByte() + s.readByte() + 2048'u64
+    of 2:
+      (2'u64 ^ 24)*addrPart + (2'u64 ^ 16)*s.readByte() + (2'u64 ^ 8)*s.readByte() + s.readByte() + 526336'u64
+    of 3:
+      s.readNumber(4)
+    else:
+      raise newException(ValueError, "invalid pointer size " & $size)
+
+proc decodePointer(mmdb: MMDB; value: int): MMDBData =
+  let
+    metadata = mmdb.metadata.get
     dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) div 8) * metadata["node_count"].u64Val  # given formula
-    p: uint64 =
-      if size == 0:
-        (2'u64 ^ 8)*addrPart + mmdb.s.readByte()
-      elif size == 1:
-        (2'u64 ^ 16)*addrPart + (2'u64 ^ 8)*mmdb.s.readByte() + mmdb.s.readByte() + 2048'u64
-      elif size == 2:
-        (2'u64 ^ 24)*addrPart + (2'u64 ^ 16)*mmdb.s.readByte() + (2'u64 ^ 8)*mmdb.s.readByte() + mmdb.s.readByte() + 526336'u64
-      elif size == 3:
-        mmdb.s.readNumber(4)
-      else:
-        raise newException(ValueError, "invalid pointer size " & $size)
+    p = readPointer(mmdb.s, value)
     absoluteOffset = dataSectionStart + p
     localPos = mmdb.s.getPosition()
 
@@ -239,99 +239,88 @@ proc decodePointer(mmdb: MMDB; value: int): MMDBData =
 
   mmdb.s.setPosition(localPos)
 
-proc decodeString(s: Stream; size: int): MMDBData =
+proc decodeString(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkString)
-  result.stringVal = s.readStr(size)
+  result.stringVal = mmdb.s.readStr(size)
 
-proc decodeDouble(s: Stream; _: int): MMDBData =
+proc decodeDouble(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkDouble)
   var buf: float64
-  discard s.readData(addr buf, 8)
+  discard mmdb.s.readData(addr buf, 8)
   bigEndian64(addr result.doubleVal, addr buf)
 
-proc decodeBytes(s: Stream; size: int): MMDBData =
+proc decodeBytes(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkBytes)
   if size == 0:
     result.bytesVal = ""
   else:
-    result.bytesVal = s.readBytes(size)
+    result.bytesVal = mmdb.s.readBytes(size)
 
-proc decodeUInt(s: Stream; size: int; kind: MMDBDataKind): MMDBData =
+proc decodeUInt(mmdb: MMDB; size: int; kind: MMDBDataKind): MMDBData =
   result = MMDBData(kind: kind)
-  result.u64Val = s.readNumber(size)
+  result.u64Val = mmdb.s.readNumber(size)
 
-proc decodeU128(s: Stream; size: int): MMDBData =
+proc decodeU128(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkU128)
-  result.u128Val = s.readBytes(size)
+  result.u128Val = mmdb.s.readBytes(size)
 
-proc decodeI32(s: Stream; size: int): MMDBData =
+proc decodeI32(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkI32)
   var buf: int32
-  discard s.readData((addr buf) +@ (4 - size), size)
+  discard mmdb.s.readData((addr buf) +@ (4 - size), size)
   bigEndian32(addr result.i32Val, addr buf)
 
-proc decodeMap(s: Stream; entryCount: int): MMDBData =
+proc decodeMap(mmdb: MMDB; entryCount: int): MMDBData =
   result = MMDBData(kind: mdkMap)
   for _ in 0..<entryCount:
     let
-      key = s.decode()
-      val = s.decode()
+      key = mmdb.decode()
+      val = mmdb.decode()
     result.mapVal[key] = val
 
-proc decodeArray(s: Stream; entryCount: int): MMDBData =
+proc decodeArray(mmdb: MMDB; entryCount: int): MMDBData =
   result = MMDBData(kind: mdkArray)
   for _ in 0..<entryCount:
-    let val = s.decode()
+    let val = mmdb.decode()
     result.arrayVal.add(val)
 
-proc decodeBoolean(s: Stream; value: int): MMDBData =
+proc decodeBoolean(mmdb: MMDB; value: int): MMDBData =
   result = MMDBData(kind: mdkBoolean)
   result.booleanVal = value.bool
 
-proc decodeFloat(s: Stream; _: int): MMDBData =
+proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkFloat)
   var buf: float32
-  discard s.readData(addr buf, 4)
+  discard mmdb.s.readData(addr buf, 4)
   bigEndian32(addr result.floatVal, addr buf)
-
-proc decodeData(s: Stream; dataKind: MMDBDataKind; dataSize: int): MMDBData =
-  result = case dataKind
-    of mdkString:
-      s.decodeString(dataSize)
-    of mdkDouble:
-      s.decodeDouble(dataSize)
-    of mdkBytes:
-      s.decodeBytes(dataSize)
-    of mdkU16, mdkU32, mdkU64:
-      s.decodeUInt(dataSize, dataKind)
-    of mdkU128:
-      s.decodeU128(dataSize)
-    of mdkI32:
-      s.decodeI32(dataSize)
-    of mdkMap:
-      s.decodeMap(dataSize)
-    of mdkArray:
-      s.decodeArray(dataSize)
-    of mdkBoolean:
-      s.decodeBoolean(dataSize)
-    of mdkFloat:
-      s.decodeFloat(dataSize)
-    of mdkPointer:
-      raise newException(ValueError, "Decoding " & $dataKind & " requires an MMDB object")
-    else:
-      raise newException(ValueError, "Can't deal with format " & $dataKind)
 
 proc decode*(mmdb: MMDB): MMDBData =
   let (dataKind, dataSize) = mmdb.s.readControlByte()
   result = case dataKind
     of mdkPointer:
       mmdb.decodePointer(dataSize)
+    of mdkString:
+      mmdb.decodeString(dataSize)
+    of mdkDouble:
+      mmdb.decodeDouble(dataSize)
+    of mdkBytes:
+      mmdb.decodeBytes(dataSize)
+    of mdkU16, mdkU32, mdkU64:
+      mmdb.decodeUInt(dataSize, dataKind)
+    of mdkU128:
+      mmdb.decodeU128(dataSize)
+    of mdkI32:
+      mmdb.decodeI32(dataSize)
+    of mdkMap:
+      mmdb.decodeMap(dataSize)
+    of mdkArray:
+      mmdb.decodeArray(dataSize)
+    of mdkBoolean:
+      mmdb.decodeBoolean(dataSize)
+    of mdkFloat:
+      mmdb.decodeFloat(dataSize)
     else:
-      mmdb.s.decodeData(dataKind, dataSize)
-
-proc decode*(s: Stream): MMDBData =
-  let (dataKind, dataSize) = s.readControlByte()
-  s.decodeData(dataKind, dataSize)
+      raise newException(ValueError, "Can't deal with format " & $dataKind)
 
 # metadata #
 # TODO: fail gracefully when metadata not found, maybe conditional on a compilation flag

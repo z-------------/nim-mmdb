@@ -14,6 +14,10 @@ template `*`(n: int; s: string): string =
 template `*`(s: string; n: int): string =
   s.repeat(n)
 
+proc decode(s: Stream): MMDBData =
+  var m = MMDB(s: s)
+  m.decode()
+
 test "array":
   let datas = {
     "\x00\x04": @[],
