@@ -43,7 +43,7 @@ type
     of mdkI32:
       i32Val*: int32
     of mdkMap:
-      mapVal*: Table[MMDBData, MMDBData]
+      mapVal*: OrderedTable[MMDBData, MMDBData]
     of mdkArray:
       arrayVal*: seq[MMDBData]
     of mdkBoolean:
@@ -56,9 +56,6 @@ type
     size: int
 
 # MMDBData methods #
-
-proc toMMDB*(stringVal: string): MMDBData =
-  MMDBData(kind: mdkString, stringVal: stringVal)
 
 proc hash*(x: MMDBData): Hash =
   var h: Hash = 0
@@ -94,6 +91,18 @@ proc hash*(x: MMDBData): Hash =
 
 proc `==`*(a, b: MMDBData): bool =
   a.hash == b.hash
+
+proc toMMDB*(stringVal: string): MMDBData =
+  MMDBData(kind: mdkString, stringVal: stringVal)
+
+proc toMMDB*(mapVal: OrderedTable[MMDBData, MMDBData]): MMDBData =
+  MMDBData(kind: mdkMap, mapVal: mapVal)
+
+proc toMMDB*(mapVal: openArray[(MMDBData, MMDBData)]): MMDBData =
+  MMDBData(kind: mdkMap, mapVal: mapVal.toOrderedTable)
+
+template m*(s: string): MMDBData =
+  s.toMMDB
 
 proc `[]`*(x: MMDBData; key: MMDBData): MMDBData =
   if x.kind != mdkMap:

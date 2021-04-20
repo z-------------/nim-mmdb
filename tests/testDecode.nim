@@ -7,6 +7,7 @@ import unittest
 import mmdb
 import streams
 import strutils
+import tables
 
 template `*`(n: int; s: string): string =
   s.repeat(n)
@@ -92,6 +93,31 @@ test "int32":
     let decoded = decode(newStringStream(k))
     check decoded.kind == mdkI32
     check decoded.i32Val == expected
+
+test "map":
+  let datas = {
+    "\xe0": initOrderedTable[MMDBData, MMDBData]().toMMDB,
+    "\xe1\x42\x65\x6e\x43\x46\x6f\x6f": {
+      m"en": m"Foo"
+    }.toMMDB,
+    "\xe2\x42\x65\x6e\x43\x46\x6f\x6f\x42\x6a\x61\x43\xe4\xba\xba": {
+        m"en": m"Foo",
+        m"ja": m"人",
+    }.toMMDB,
+    "\xe1\x44\x6e\x61\x6d\x65\xe2\x42\x65\x6e\x43\x46\x6f\x6f\x42\x6a\x61\x43\xe4\xba\xba": {
+      m"name": {
+        m"en": m"Foo",
+        m"ja": m"人",
+      }.toMMDB
+    }.toMMDB,
+    "\xe1\x49\x6c\x61\x6e\x67\x75\x61\x67\x65\x73\x02\x04\x42\x65\x6e\x42\x6a\x61": {
+      m"languages": MMDBData(kind: mdkArray, arrayVal: @[m"en", m"ja"])
+    }.toMMDB,
+  }
+  for _, (k, expected) in datas:
+    let decoded = decode(newStringStream(k))
+    check decoded.kind == mdkMap
+    check decoded == expected
 
 test "string":
   let datas = {
