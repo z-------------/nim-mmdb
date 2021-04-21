@@ -222,7 +222,7 @@ proc readPointer*(s: Stream; value: int): uint64 =
     # first two bits indicate size
     size = 2*value.getBit(3 + 0) + value.getBit(3 + 1)
     # last three bits are used for the address
-    addrPart = 3*value.getBit(3 + 2) + 2*value.getBit(3 + 3) + value.getBit(3 + 4)
+    addrPart = 4*value.getBit(3 + 2) + 2*value.getBit(3 + 3) + value.getBit(3 + 4)
   case size
     of 0:
       (2'u64 ^ 8)*addrPart + s.readByte()
