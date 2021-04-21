@@ -119,6 +119,27 @@ test "map":
     check decoded.kind == mdkMap
     check decoded == expected
 
+test "pointer":
+  let datas = {
+    "\x20\x00": 0'u64,
+    "\x20\x05": 5'u64,
+    "\x20\x0a": 10'u64,
+    "\x23\xff": 1023'u64,
+    "\x28\x03\xc9": 3017'u64,
+    "\x2f\xf7\xfb": 524283'u64,
+    "\x2f\xff\xff": 526335'u64,
+    "\x37\xf7\xf7\xfe": 134217726'u64,
+    "\x37\xff\xff\xff": 134744063'u64,
+    "\x38\x7f\xff\xff\xff": 2147483647'u64,
+    "\x38\xff\xff\xff\xff": 4294967295'u64,
+  }
+  for _, (k, expected) in datas:
+    let
+      s = newStringStream(k)
+      (_, dataSize) = s.readControlByte()
+      pointerAddress = s.readPointer(dataSize)
+    check pointerAddress == expected
+
 test "string":
   let datas = {
     "\x40": "",
