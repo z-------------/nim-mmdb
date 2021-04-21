@@ -220,9 +220,9 @@ proc decode*(mmdb: MMDB): MMDBData
 proc readPointer*(s: Stream; value: int): uint64 =
   let
     # first two bits indicate size
-    size = 2*value.getBit(3 + 0) + value.getBit(3 + 1)
+    size = value.masked(0b11000) shr 3
     # last three bits are used for the address
-    addrPart = 4*value.getBit(3 + 2) + 2*value.getBit(3 + 3) + value.getBit(3 + 4)
+    addrPart = value.uint8.masked(0b00111)
   case size
     of 0:
       (2'u64 ^ 8)*addrPart + s.readByte()
