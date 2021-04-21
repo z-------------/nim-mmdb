@@ -195,7 +195,9 @@ proc readNumber(s: Stream; size: int): uint64 =
     let n = s.readUint8()
     result += n * (256 ^ i).uint64
 
-proc readControlByte(s: Stream): (MMDBDataKind, int) =
+# data decode #
+
+proc readControlByte*(s: Stream): (MMDBDataKind, int) =
   let controlByte = s.readByte()
   var
     dataFormat = controlByte shr 5
@@ -212,8 +214,6 @@ proc readControlByte(s: Stream): (MMDBDataKind, int) =
     dataSize = 65821 + (2 ^ 16)*s.readByte().int + (2 ^ 8)*s.readByte().int + s.readByte().int
 
   (MMDBDataKind(dataFormat), dataSize)
-
-# data decode #
 
 proc decode*(mmdb: MMDB): MMDBData
 
