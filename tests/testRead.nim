@@ -11,20 +11,16 @@ import math
 # import strutils
 # import tables
 
-template checkMetadata(m: MMDB; ipVersion: uint16, recordSizeBits: uint16): untyped =
-  let metadata = m.metadata.get
+template checkMetadata(db: MMDB; ipVersion: uint16, recordSizeBits: uint16): untyped =
+  let metadata = db.metadata.get
   check metadata["binary_format_major_version"] == 2'u64
   check metadata["binary_format_minor_version"] == 0'u64
   check metadata["build_epoch"] > 1373571901'u64
   check metadata["database_type"] == "Test"
-  #[
-    self.assertEqual(
-        {"en": "Test Database", "zh": "Test Database Chinese"}, metadata.description
-    )
-    self.assertEqual(metadata.ip_version, ip_version)
-    self.assertEqual(metadata.languages, ["en", "zh"])
-    self.assertGreater(metadata.node_count, 36)
-  ]#
+  check metadata["description"] == {m"en": m"Test Database", m"zh": m"Test Database Chinese"}.toMMDB
+  check metadata["ip_version"] == ipVersion
+  check metadata["languages"] == MMDBData(kind: mdkArray, arrayVal: @[m"en", m"zh"])
+  check metadata["node_count"] > 36'u32
   check metadata["record_size"].u64Val == recordSizeBits
 
 template checkIPv4(db: MMDB) =
