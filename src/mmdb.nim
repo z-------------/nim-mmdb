@@ -7,6 +7,8 @@ import net
 import streams
 import endians
 
+export options
+
 const
   MetadataMarker = "\xab\xcd\xefMaxMind.com"
 
@@ -91,6 +93,18 @@ proc hash*(x: MMDBData): Hash =
 
 proc `==`*(a, b: MMDBData): bool =
   a.hash == b.hash
+
+proc `==`*(a: MMDBData; b: uint64): bool =
+  assert a.kind == mdkU16 or a.kind == mdkU32 or a.kind == mdkU64
+  a.u64Val == b
+
+proc `>`*(a: MMDBData; b: uint64): bool =
+  assert a.kind == mdkU16 or a.kind == mdkU32 or a.kind == mdkU64
+  a.u64Val > b
+
+proc `==`*(a: MMDBData; b: string): bool =
+  assert a.kind == mdkString
+  a.stringVal == b
 
 proc toMMDB*(stringVal: string): MMDBData =
   MMDBData(kind: mdkString, stringVal: stringVal)
@@ -332,7 +346,6 @@ proc decode*(mmdb: MMDB): MMDBData =
       raise newException(ValueError, "Can't deal with format " & $dataKind)
 
 # metadata #
-# TODO: fail gracefully when metadata not found, maybe conditional on a compilation flag
 
 proc getMetadataPos(mmdb: MMDB): int =
   mmdb.s.rFind(mmdb.size, MetadataMarker) + MetadataMarker.len
@@ -341,14 +354,16 @@ proc readMetadata(mmdb: var MMDB) =
   mmdb.s.setPosition(mmdb.getMetadataPos())
   mmdb.metadata = some(mmdb.decode())
 
-# public methods #
-
-proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
+template checkMetadataValid(mmdb: MMDB): untyped =
   if mmdb.metadata.isNone:
     raise newException(ValueError, "No database is open.")
   if mmdb.metadata.get.kind != mdkMap:
     raise newException(ValueError, "Invalid metadata; expected " & $mdkMap & ", got " & $mmdb.metadata.get.kind)
 
+# public methods #
+
+proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
+  mmdb.checkMetadataValid()
   let
     metadata = mmdb.metadata.get
     recordSizeBits: uint64 = metadata["record_size"].u64Val
@@ -356,10 +371,8 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
     nodeCount: uint64 = metadata["node_count"].u64Val
     treeSize: uint64 = ((recordSizeBits.int * 2) div 8).uint64 * nodeCount.uint64
 
-  if metadata["ip_version"].u64Val != 6'u64:
-    raise newException(ValueError, "Only IPv6 databases are supported for now")
-  if recordSizeBits != 24:
-    raise newException(ValueError, "Only record size 24 is supported for now")
+  if recordSizeBits != 24 #[and recordSizeBits != 28]# and recordSizeBits != 32:
+    raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
   
   mmdb.s.setPosition(0)  # go to root node
 
@@ -384,15 +397,20 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
         return mmdb.decode()
 
 proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
+  mmdb.checkMetadataValid()
   let
+    ipVersion = mmdb.metadata.get["ip_version"].u64Val
     ipAddrObj = parseIpAddress(ipAddrStr)
-    ipAddrBytes =
-      case ipAddrObj.family
-      of IpAddressFamily.IPv6:
-        ipAddrObj.address_v6
-      of IpAddressFamily.IPv4:
-        padIPv4Address(ipAddrObj.address_v4)
-  mmdb.lookup(ipAddrBytes)
+  case ipAddrObj.family
+  of IpAddressFamily.IPv6:
+    if ipVersion != 6'u64:
+      raise newException(ValueError, "Cannot lookup IPv6 address in IPv4 database")
+    mmdb.lookup(ipAddrObj.address_v6)
+  of IpAddressFamily.IPv4:
+    if ipVersion == 4'u64:
+      mmdb.lookup(ipAddrObj.address_v4)
+    else:
+      mmdb.lookup(padIPv4Address(ipAddrObj.address_v4))
 
 proc openFile*(mmdb: var MMDB; stream: Stream) =
   mmdb.s = stream
@@ -411,6 +429,9 @@ proc initMMDB*(filename: string): MMDB =
 
 proc initMMDB*(file: File): MMDB =
   result.openFile(file)
+
+proc close*(mmdb: MMDB) =
+  mmdb.s.close()
 
 
 when isMainModule:
