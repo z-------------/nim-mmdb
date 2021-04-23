@@ -11,6 +11,12 @@ import math
 # import strutils
 # import tables
 
+template checkDoubleEqual(a, b: float64): untyped =
+  check abs(a - b) < 0.000001
+
+template checkFloatEqual(a, b: float32): untyped =
+  check abs(a - b) < 0.00001
+
 template checkMetadata(db: MMDB; ipVersion: uint16, recordSizeBits: uint16): untyped =
   let metadata = db.metadata.get
   check metadata["binary_format_major_version"] == 2'u64
@@ -84,3 +90,36 @@ test "reader":
         checkIPv6(db)
       
       db.close()
+
+test "decoder":
+  let filename = "tests/data/test-data/MaxMind-DB-test-decoder.mmdb"
+  var db = initMMDB(filename)
+  let record = db.lookup("::1.1.1.0")
+  
+  check record["array"] == MMDBData(kind: mdkArray, arrayVal: @[
+    MMDBData(kind: mdkU32, u64Val: 1),
+    MMDBData(kind: mdkU32, u64Val: 2),
+    MMDBData(kind: mdkU32, u64Val: 3),
+  ])
+  check record["boolean"].booleanVal == true
+  check record["bytes"].bytesVal == "\x00\x00\x00*"
+  checkDoubleEqual record["double"].doubleVal, 42.123456
+  checkFloatEqual record["float"].floatVal, 1.1
+  check record["int32"].i32Val == -268435456
+  check record["map"] == {
+    m("mapX"): {
+      m("arrayX"): MMDBData(kind: mdkArray, arrayVal: @[
+        MMDBData(kind: mdkU32, u64Val: 7),
+        MMDBData(kind: mdkU32, u64Val: 8),
+        MMDBData(kind: mdkU32, u64Val: 9),
+      ]),
+      m("utf8_stringX"): m("hello")
+    }.toMMDB
+  }.toMMDB
+  check record["uint16"] == 100'u16
+  check record["uint32"] == 268435456'u32
+  check record["uint64"] == 1152921504606846976'u64
+  check record["utf8_string"] == "unicode! ☯ - ♫"
+  # check record["uint128"] == 1329227995784915872903807060280344576
+
+  db.close()
