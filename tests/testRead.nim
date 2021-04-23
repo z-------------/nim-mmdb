@@ -123,3 +123,26 @@ test "decoder":
   # check record["uint128"] == 1329227995784915872903807060280344576
 
   db.close()
+
+# test "no IPv4 search tree":
+#   let filename = "tests/data/test-data/MaxMind-DB-no-ipv4-search-tree.mmdb"
+#   var db = initMMDB(filename)
+
+#   check db.lookup("1.1.1.1") == "::0/64"
+#   check db.lookup("192.1.1.1") == "::0/64"
+
+#   db.close()
+
+test "IPv6 address in IPv4 database":
+  let filename = "tests/data/test-data/MaxMind-DB-test-ipv4-24.mmdb"
+  var db = initMMDB(filename)
+
+  expect ValueError:
+    discard db.lookup("2001::")
+
+  db.close()
+
+test "missing database":
+  expect IOError:
+    let filename = "file-does-not-exist.mmdb"
+    discard initMMDB(filename)
