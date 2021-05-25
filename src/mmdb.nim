@@ -195,7 +195,7 @@ proc rFind(s: Stream; streamSize: int; needle: string): int =
       break
     i.inc()
     s.setPosition(-i, fspEnd, streamSize)
-  
+
   return -1
 
 proc readBytes(s: Stream; size: int): string =
@@ -454,4 +454,4 @@ when isMainModule:
   let mmdb = initMMDB("dbip-lite.mmdb")
   echo mmdb.metadata
   let info = mmdb.lookup("1.1.1.1")
-  echo $info["country"]["names"]["en"] & " (" & $info["country"]["iso_code"] & ")"
+  echo info["country"]["names"]["en"], " (", info["country"]["iso_code"], ")"
