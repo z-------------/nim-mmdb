@@ -14,7 +14,7 @@ const
 
 type
   MMDBDataKind* = enum
-    mdkNone = 0  # we need this because enums must start from 0
+    mdkNone = 0  # discriminant must start from 0
     mdkPointer = 1
     mdkString = 2
     mdkDouble = 3
