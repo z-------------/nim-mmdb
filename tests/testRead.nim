@@ -73,7 +73,7 @@ template checkIPv6(db: MMDB) =
       discard db.lookup(ip)
 
 test "reader":
-  for recordSizeBits in [24'u16, #[28'u16,]# 32'u16]:
+  for recordSizeBits in [24'u16, 28'u16, 32'u16]:
     for ipVersion in [4'u16, 6'u16]:
       let filename =
         "tests/data/test-data/MaxMind-DB-test-ipv" & $ipVersion &

@@ -371,20 +371,36 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
     nodeCount: uint64 = metadata["node_count"].u64Val
     treeSize: uint64 = ((recordSizeBits.int * 2) div 8).uint64 * nodeCount.uint64
 
-  if recordSizeBits != 24 #[and recordSizeBits != 28]# and recordSizeBits != 32:
-    raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
-  
   mmdb.s.setPosition(0)  # go to root node
 
   for b in ipAddr:
     for j in 0..<8:
-      let bit = b.getBit(j)
-
-      if bit == 1:  # right record
-        mmdb.s.setPosition((recordSizeBits div 8).int, fspCur)
-      # else, if left record, we are already in the correct position
-
-      let recordVal = mmdb.s.readNumber((recordSizeBits div 8).int)
+      let
+        bit = b.getBit(j)
+        recordVal =
+          if recordSizeBits == 24 or recordSizeBits == 32:
+            if bit == 1:  # right record
+              mmdb.s.setPosition((recordSizeBits div 8).int, fspCur)
+            # else, if left record, we are already in the correct position
+            mmdb.s.readNumber((recordSizeBits div 8).int)
+          elif recordSizeBits == 28:
+            let baseOffset = mmdb.s.getPosition()
+            mmdb.s.setPosition(baseOffset)
+            if bit == 1:  # right record
+              mmdb.s.setPosition(baseOffset + 4)
+            # else, if left record, we are already in the correct position
+            let n = mmdb.s.readNumber(3)  # read 3 bytes
+            mmdb.s.setPosition(baseOffset + 4)
+            let
+              middle = mmdb.s.readNumber(1)  # read the middle byte
+              pref =
+                if bit == 1:  # right record
+                  8*middle.getBit(4) + 4*middle.getBit(5) + 2*middle.getBit(6) + middle.getBit(7)
+                else:  # left record
+                  8*middle.getBit(0) + 4*middle.getBit(1) + 2*middle.getBit(2) + middle.getBit(3)
+            n + (pref shl 8)
+          else:
+            raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
 
       if recordVal < nodeCount:
         let absoluteOffset = recordVal * nodeSizeBits div 8
