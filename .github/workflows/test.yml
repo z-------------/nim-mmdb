@@ -16,3 +16,6 @@ jobs:
         with:
           nim-version: "1.4.4"
       - run: nimble test -Y
+      - run: nimble test -Y --gc:arc
+      - run: nimble test -Y --gc:orc
+      - run: nimble test -Y --gc:refc
