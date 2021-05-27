@@ -385,20 +385,19 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
             mmdb.s.readNumber((recordSizeBits div 8).int)
           elif recordSizeBits == 28:
             let baseOffset = mmdb.s.getPosition()
-            mmdb.s.setPosition(baseOffset)
             if bit == 1:  # right record
               mmdb.s.setPosition(baseOffset + 4)
             # else, if left record, we are already in the correct position
             let n = mmdb.s.readNumber(3)  # read 3 bytes
-            mmdb.s.setPosition(baseOffset + 4)
+            mmdb.s.setPosition(baseOffset + 3)  # go to the middle byte
             let
-              middle = mmdb.s.readNumber(1)  # read the middle byte
+              middle = mmdb.s.readNumber(1).uint8  # read the middle byte
               pref =
                 if bit == 1:  # right record
-                  8*middle.getBit(4) + 4*middle.getBit(5) + 2*middle.getBit(6) + middle.getBit(7)
+                  middle and 0x0F
                 else:  # left record
-                  8*middle.getBit(0) + 4*middle.getBit(1) + 2*middle.getBit(2) + middle.getBit(3)
-            n + (pref shl 8)
+                  (middle and 0xF0) shr 4
+            n + (pref.uint64 shl 24) # prepend to the 3 bytes
           else:
             raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
 
