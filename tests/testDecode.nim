@@ -196,25 +196,53 @@ test "uint32":
     check decoded.kind == mdkU32
     check decoded.u64Val == expected
 
-proc generateUint64s(): seq[(string, uint64)] =
-  let
-    sizeBits = 64
-    controlByte = "\x02"
-  result = @[
-    ("\x00" & controlByte, 0'u64),
-    ("\x02" & controlByte & "\x01\xf4", 500'u64),
-    ("\x02" & controlByte & "\x2a\x78", 10872'u64),
-  ]
-  var n = 1'u64
-  for power in 0..<(sizeBits div 8 + 1):
-    let
-      expected = n - 1
-      input = power.char & controlByte & "\xff".repeat(power)
-    result.add((input, expected))
-    n = n shl 8
-
 test "uint64":
-  for _, (k, expected) in generateUint64s():
+  let datas = block:
+    let controlByte = "\x02"
+    var
+      result = @[
+        ("\x00" & controlByte, 0'u64),
+        ("\x02" & controlByte & "\x01\xf4", 500'u64),
+        ("\x02" & controlByte & "\x2a\x78", 10872'u64),
+      ]
+      n = 1'u64
+    for power in 0..<(64 div 8 + 1):
+      let
+        expected = n - 1
+        input = power.char & controlByte & "\xff".repeat(power)
+      result.add((input, expected))
+      n = n shl 8
+    result
+  for _, (k, expected) in datas:
     let decoded = decode(newStringStream(k))
     check decoded.kind == mdkU64
     check decoded.u64Val == expected
+
+test "uint128":
+  let datas = block:
+    var
+      result = @[
+        ("\x00" & "\x03", [0'u64, 0'u64]),
+        (
+          16.char & "\x03" & "\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
+          [0xFF_FF_FF_FF_FF_00_FF_FF'u64, 0xFF_FF_FF_FF_FF_FF_FF_FF'u64]
+        ),
+        (
+          16.char & "\x03" & "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
+          [0xFF_FF_FF_FF_FF_FF_FF_FF'u64, 0xFF_FF_FF_FF_FF_FF_FF_FF'u64]
+        ),
+      ]
+    result
+  for _, (k, expected) in datas:
+    let decoded = decode(newStringStream(k))
+    check decoded.kind == mdkU128
+    # get the two uint64s from the decoded byte string
+    let
+      val = decoded.u128Val
+      padded = val.align(16, '\0')
+      aStr = padded[0..7]
+      bStr = padded[8..15]
+      a = cast[ptr uint64](aStr.cstring)[]
+      b = cast[ptr uint64](bStr.cstring)[]
+    check a == expected[0]
+    check b == expected[1]
