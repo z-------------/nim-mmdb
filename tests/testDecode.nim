@@ -195,3 +195,26 @@ test "uint32":
     let decoded = decode(newStringStream(k))
     check decoded.kind == mdkU32
     check decoded.u64Val == expected
+
+proc generateUint64s(): seq[(string, uint64)] =
+  let
+    sizeBits = 64
+    controlByte = "\x02"
+  result = @[
+    ("\x00" & controlByte, 0'u64),
+    ("\x02" & controlByte & "\x01\xf4", 500'u64),
+    ("\x02" & controlByte & "\x2a\x78", 10872'u64),
+  ]
+  var n = 1'u64
+  for power in 0..<(sizeBits div 8 + 1):
+    let
+      expected = n - 1
+      input = power.char & controlByte & "\xff".repeat(power)
+    result.add((input, expected))
+    n = n shl 8
+
+test "uint64":
+  for _, (k, expected) in generateUint64s():
+    let decoded = decode(newStringStream(k))
+    check decoded.kind == mdkU64
+    check decoded.u64Val == expected
