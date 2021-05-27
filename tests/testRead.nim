@@ -9,13 +9,26 @@ import mmdb
 import math
 # import streams
 # import strutils
-# import tables
+import tables
 
 template checkDoubleEqual(a, b: float64): untyped =
   check abs(a - b) < 0.000001
 
 template checkFloatEqual(a, b: float32): untyped =
   check abs(a - b) < 0.00001
+
+proc checkRecordEqual(a, b: MMDBData) =
+  check a.kind == b.kind
+  case a.kind
+  of mdkMap:
+    for k, v in a.mapVal.pairs:
+      checkRecordEqual v, b[k]
+  of mdkDouble:
+    checkDoubleEqual a.doubleVal, b.doubleVal
+  of mdkFloat:
+    checkFloatEqual a.floatVal, b.floatVal
+  else:
+    check a == b
 
 template checkMetadata(db: MMDB; ipVersion: uint16, recordSizeBits: uint16): untyped =
   let metadata = db.metadata.get
@@ -72,7 +85,7 @@ template checkIPv6(db: MMDB) =
     expect KeyError:
       discard db.lookup(ip)
 
-test "reader":
+test "reader 1":
   for recordSizeBits in [24'u16, 28'u16, 32'u16]:
     for ipVersion in [4'u16, 6'u16]:
       let filename =
@@ -91,36 +104,126 @@ test "reader":
       
       db.close()
 
-test "decoder":
-  let filename = "tests/data/test-data/MaxMind-DB-test-decoder.mmdb"
-  var db = initMMDB(filename)
-  let record = db.lookup("::1.1.1.0")
-  
-  check record["array"] == MMDBData(kind: mdkArray, arrayVal: @[
+let decoderRecord = {
+  m"array": MMDBData(kind: mdkArray, arrayVal: @[
     MMDBData(kind: mdkU32, u64Val: 1),
     MMDBData(kind: mdkU32, u64Val: 2),
     MMDBData(kind: mdkU32, u64Val: 3),
-  ])
-  check record["boolean"].booleanVal == true
-  check record["bytes"].bytesVal == "\x00\x00\x00*"
-  checkDoubleEqual record["double"].doubleVal, 42.123456
-  checkFloatEqual record["float"].floatVal, 1.1
-  check record["int32"].i32Val == -268435456
-  check record["map"] == {
-    m("mapX"): {
-      m("arrayX"): MMDBData(kind: mdkArray, arrayVal: @[
+  ]),
+  m"boolean": MMDBData(kind: mdkBoolean, booleanVal: true),
+  m"bytes": MMDBData(kind: mdkBytes, bytesVal: "\x00\x00\x00*"),
+  m"double": MMDBData(kind: mdkDouble, doubleVal: 42.123456),
+  m"float": MMDBData(kind: mdkFloat, floatVal: 1.1),
+  m"int32": MMDBData(kind: mdkI32, i32Val: -268435456),
+  m"map": {
+    m"mapX": {
+      m"arrayX": MMDBData(kind: mdkArray, arrayVal: @[
         MMDBData(kind: mdkU32, u64Val: 7),
         MMDBData(kind: mdkU32, u64Val: 8),
         MMDBData(kind: mdkU32, u64Val: 9),
       ]),
-      m("utf8_stringX"): m("hello")
+      m"utf8_stringX": m"hello"
     }.toMMDB
-  }.toMMDB
-  check record["uint16"] == 100'u16
-  check record["uint32"] == 268435456'u32
-  check record["uint64"] == 1152921504606846976'u64
-  check record["utf8_string"] == "unicode! ☯ - ♫"
-  # check record["uint128"] == 1329227995784915872903807060280344576
+  }.toMMDB,
+  m"uint16": MMDBData(kind: mdkU16, u64Val: 100'u16),
+  m"uint32": MMDBData(kind: mdkU32, u64Val: 268435456'u32),
+  m"uint64": MMDBData(kind: mdkU64, u64Val: 1152921504606846976'u64),
+  m"uint128": MMDBData(kind: mdkU128, u128Val: "\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"), # 1329227995784915872903807060280344576
+  m"utf8_string": MMDBData(kind: mdkString, stringVal: "unicode! ☯ - ♫"),
+}.toMMDB
+
+test "reader 2":
+  let tests = @[
+    (
+      ip: "1.1.1.1",
+      fileName: "MaxMind-DB-test-ipv6-32.mmdb",
+      expectedPrefixLen: 8,
+      expectedRecord: MMDBData(kind: mdkNone),
+    ),
+    (
+      ip: "::1:ffff:ffff",
+      fileName: "MaxMind-DB-test-ipv6-24.mmdb",
+      expectedPrefixLen: 128,
+      expectedRecord: {m"ip": m"::1:ffff:ffff"}.toMMDB,
+    ),
+    (
+      ip: "::2:0:1",
+      fileName: "MaxMind-DB-test-ipv6-24.mmdb",
+      expectedPrefixLen: 122,
+      expectedRecord: {m"ip": m"::2:0:0"}.toMMDB,
+    ),
+    (
+      ip: "1.1.1.1",
+      fileName: "MaxMind-DB-test-ipv4-24.mmdb",
+      expectedPrefixLen: 32,
+      expectedRecord: {m"ip": m"1.1.1.1"}.toMMDB,
+    ),
+    (
+      ip: "1.1.1.3",
+      fileName: "MaxMind-DB-test-ipv4-24.mmdb",
+      expectedPrefixLen: 31,
+      expectedRecord: {m"ip": m"1.1.1.2"}.toMMDB,
+    ),
+    (
+      ip: "1.1.1.3",
+      file_name: "MaxMind-DB-test-decoder.mmdb",
+      expectedPrefixLen: 24,
+      expectedRecord: decoderRecord,
+    ),
+    (
+      ip: "::ffff:1.1.1.128",
+      fileName: "MaxMind-DB-test-decoder.mmdb",
+      expectedPrefixLen: 120,
+      expectedRecord: decoderRecord,
+    ),
+    (
+      ip: "::1.1.1.128",
+      fileName: "MaxMind-DB-test-decoder.mmdb",
+      expectedPrefixLen: 120,
+      expectedRecord: decoderRecord,
+    ),
+    # (
+    #   ip: "200.0.2.1",
+    #   fileName: "MaxMind-DB-no-ipv4-search-tree.mmdb",
+    #   expectedPrefixLen: 0,
+    #   expectedRecord: m"::0/64",
+    # ),
+    # (
+    #   ip: "::200.0.2.1",
+    #   fileName: "MaxMind-DB-no-ipv4-search-tree.mmdb",
+    #   expectedPrefixLen: 64,
+    #   expectedRecord: m"::0/64",
+    # ),
+    # (
+    #   ip: "0:0:0:0:ffff:ffff:ffff:ffff",
+    #   fileName: "MaxMind-DB-no-ipv4-search-tree.mmdb",
+    #   expectedPrefixLen: 64,
+    #   expectedRecord: m"::0/64",
+    # ),
+    # (
+    #   ip: "ef00::",
+    #   fileName: "MaxMind-DB-no-ipv4-search-tree.mmdb",
+    #   expectedPrefixLen: 1,
+    #   expectedRecord: MMDBData(kind: mdkNone),
+    # ),
+  ]
+  for test in tests:
+    let db = initMMDB("tests/data/test-data/" & test.fileName)
+
+    try:
+      let record = db.lookup(test.ip)
+      checkRecordEqual record, test.expectedRecord
+    except KeyError:
+      check test.expectedRecord.kind == mdkNone
+
+    db.close()
+
+test "decoder":
+  let filename = "tests/data/test-data/MaxMind-DB-test-decoder.mmdb"
+  var db = initMMDB(filename)
+  let record = db.lookup("::1.1.1.0")
+
+  checkRecordEqual record, decoderRecord
 
   db.close()
 
