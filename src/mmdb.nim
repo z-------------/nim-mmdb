@@ -241,9 +241,9 @@ proc readPointer*(s: Stream; value: int): uint64 =
     of 0:
       (2'u64 ^ 8)*addrPart + s.readByte()
     of 1:
-      (2'u64 ^ 16)*addrPart + (2'u64 ^ 8)*s.readByte() + s.readByte() + 2048'u64
+      (2'u64 ^ 16)*addrPart + s.readNumber(2) + 2048'u64
     of 2:
-      (2'u64 ^ 24)*addrPart + (2'u64 ^ 16)*s.readByte() + (2'u64 ^ 8)*s.readByte() + s.readByte() + 526336'u64
+      (2'u64 ^ 24)*addrPart + s.readNumber(3) + 526336'u64
     of 3:
       s.readNumber(4)
     else:
