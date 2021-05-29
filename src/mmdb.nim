@@ -198,11 +198,11 @@ proc rFind(s: Stream; streamSize: int; needle: string): int =
 
   return -1
 
-proc readBytes(s: Stream; size: int): string =
+template readBytes(s: Stream; size: int): string =
   s.readStr(size)
 
-proc readByte(s: Stream): uint8 =
-  s.readBytes(1)[0].uint8
+template readByte(s: Stream): uint8 =
+  s.readUint8()
 
 proc readNumber(s: Stream; size: int): uint64 =
   for i in countdown(size - 1, 0):
