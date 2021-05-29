@@ -1,6 +1,5 @@
 import tables
 import hashes
-import math
 import options
 import bitops
 import net
@@ -207,7 +206,7 @@ template readByte(s: Stream): uint8 =
 proc readNumber(s: Stream; size: int): uint64 =
   for i in countdown(size - 1, 0):
     let n = s.readUint8()
-    result += n * (256 ^ i).uint64
+    result = result or (n.uint64 shl (i * 8))
 
 # data decode #
 
@@ -223,9 +222,9 @@ proc readControlByte*(s: Stream): (MMDBDataKind, int) =
   if dataSize == 29:
     dataSize = 29 + s.readByte().int
   elif dataSize == 30:
-    dataSize = 285 + (2 ^ 8)*s.readByte().int + s.readByte().int
+    dataSize = 285 + s.readNumber(2).int
   elif dataSize == 31:
-    dataSize = 65821 + (2 ^ 16)*s.readByte().int + (2 ^ 8)*s.readByte().int + s.readByte().int
+    dataSize = 65821 + s.readNumber(3).int
 
   (MMDBDataKind(dataFormat), dataSize)
 
@@ -234,16 +233,16 @@ proc decode*(mmdb: MMDB): MMDBData
 proc readPointer*(s: Stream; value: int): uint64 =
   let
     # first two bits indicate size
-    size = value.masked(0b11000) shr 3
+    size = (value and 0b11000) shr 3
     # last three bits are used for the address
-    addrPart = value.uint8.masked(0b00111)
+    addrPart = (value and 0b00111).uint64
   case size
     of 0:
-      (2'u64 ^ 8)*addrPart + s.readByte()
+      (addrPart shl 8) + s.readByte()
     of 1:
-      (2'u64 ^ 16)*addrPart + s.readNumber(2) + 2048'u64
+      (addrPart shl 16) + s.readNumber(2) + 2048'u64
     of 2:
-      (2'u64 ^ 24)*addrPart + s.readNumber(3) + 526336'u64
+      (addrPart shl 24) + s.readNumber(3) + 526336'u64
     of 3:
       s.readNumber(4)
     else:
@@ -252,7 +251,7 @@ proc readPointer*(s: Stream; value: int): uint64 =
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
     metadata = mmdb.metadata.get
-    dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) div 8) * metadata["node_count"].u64Val  # given formula
+    dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) shr 3) * metadata["node_count"].u64Val  # given formula
     p = readPointer(mmdb.s, value)
     absoluteOffset = dataSectionStart + p
     localPos = mmdb.s.getPosition()
@@ -369,7 +368,7 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
     recordSizeBits: uint64 = metadata["record_size"].u64Val
     nodeSizeBits: uint64 = 2 * recordSizeBits
     nodeCount: uint64 = metadata["node_count"].u64Val
-    treeSize: uint64 = ((recordSizeBits.int * 2) div 8).uint64 * nodeCount.uint64
+    treeSize: uint64 = (recordSizeBits shr 2) * nodeCount  # shl 1, shr 3
 
   mmdb.s.setPosition(0)  # go to root node
 
@@ -380,9 +379,9 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
         recordVal =
           if recordSizeBits == 24 or recordSizeBits == 32:
             if bit == 1:  # right record
-              mmdb.s.setPosition((recordSizeBits div 8).int, fspCur)
+              mmdb.s.setPosition((recordSizeBits shr 3).int, fspCur)
             # else, if left record, we are already in the correct position
-            mmdb.s.readNumber((recordSizeBits div 8).int)
+            mmdb.s.readNumber((recordSizeBits shr 3).int)
           elif recordSizeBits == 28:
             let baseOffset = mmdb.s.getPosition()
             if bit == 1:  # right record
@@ -402,7 +401,7 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
             raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
 
       if recordVal < nodeCount:
-        let absoluteOffset = recordVal * nodeSizeBits div 8
+        let absoluteOffset = recordVal * (nodeSizeBits shr 3)
         mmdb.s.setPosition(absoluteOffset.int)
       elif recordVal == nodeCount:
         raise newException(KeyError, "IP address does not exist in database")
