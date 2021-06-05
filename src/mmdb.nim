@@ -385,8 +385,7 @@ template checkMetadataValid(mmdb: MMDB): untyped =
 
 # lookup #
 
-proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
-  mmdb.checkMetadataValid()
+proc doLookup(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
   let
     metadata = mmdb.metadata.get
     recordSizeBits: uint64 = metadata["record_size"].u64Val
@@ -411,6 +410,10 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
         mmdb.s.setPosition(absoluteOffset.int)
         return mmdb.decode()
 
+proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
+  mmdb.checkMetadataValid()
+  mmdb.doLookup(ipAddr)
+
 proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
   mmdb.checkMetadataValid()
   let
@@ -420,12 +423,12 @@ proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
   of IpAddressFamily.IPv6:
     if ipVersion != 6'u64:
       raise newException(ValueError, "Cannot lookup IPv6 address in IPv4 database")
-    mmdb.lookup(ipAddrObj.address_v6)
+    mmdb.doLookup(ipAddrObj.address_v6)
   of IpAddressFamily.IPv4:
     if ipVersion == 4'u64:
-      mmdb.lookup(ipAddrObj.address_v4)
+      mmdb.doLookup(ipAddrObj.address_v4)
     else:
-      mmdb.lookup(padIPv4Address(ipAddrObj.address_v4))
+      mmdb.doLookup(padIPv4Address(ipAddrObj.address_v4))
 
 # init #
 
