@@ -228,8 +228,6 @@ proc readControlByte*(s: Stream): (MMDBDataKind, int) =
 
   (MMDBDataKind(dataFormat), dataSize)
 
-proc decode*(mmdb: MMDB): MMDBData
-
 proc readPointer*(s: Stream; value: int): uint64 =
   let
     # first two bits indicate size
@@ -247,6 +245,32 @@ proc readPointer*(s: Stream; value: int): uint64 =
       s.readNumber(4)
     else:
       raise newException(ValueError, "invalid pointer size " & $size)
+
+proc readNode(s: Stream; bit: uint8; recordSizeBits: uint64): uint64 =
+  if recordSizeBits == 24 or recordSizeBits == 32:
+    if bit == 1:  # right record
+      s.setPosition((recordSizeBits shr 3).int, fspCur)
+    # else, if left record, we are already in the correct position
+    s.readNumber((recordSizeBits shr 3).int)
+  elif recordSizeBits == 28:
+    let baseOffset = s.getPosition()
+    if bit == 1:  # right record
+      s.setPosition(baseOffset + 4)
+    # else, if left record, we are already in the correct position
+    let n = s.readNumber(3)  # read 3 bytes
+    s.setPosition(baseOffset + 3)  # go to the middle byte
+    let
+      middle = s.readNumber(1).uint8  # read the middle byte
+      pref =
+        if bit == 1:  # right record
+          middle and 0x0F
+        else:  # left record
+          (middle and 0xF0) shr 4
+    n + (pref.uint64 shl 24) # prepend to the 3 bytes
+  else:
+    raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
+
+proc decode*(mmdb: MMDB): MMDBData
 
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
@@ -359,7 +383,7 @@ template checkMetadataValid(mmdb: MMDB): untyped =
   if mmdb.metadata.get.kind != mdkMap:
     raise newException(ValueError, "Invalid metadata; expected " & $mdkMap & ", got " & $mmdb.metadata.get.kind)
 
-# public methods #
+# lookup #
 
 proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
   mmdb.checkMetadataValid()
@@ -376,30 +400,7 @@ proc lookup*(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
     for j in 0..<8:
       let
         bit = b.getBit(j)
-        recordVal =
-          if recordSizeBits == 24 or recordSizeBits == 32:
-            if bit == 1:  # right record
-              mmdb.s.setPosition((recordSizeBits shr 3).int, fspCur)
-            # else, if left record, we are already in the correct position
-            mmdb.s.readNumber((recordSizeBits shr 3).int)
-          elif recordSizeBits == 28:
-            let baseOffset = mmdb.s.getPosition()
-            if bit == 1:  # right record
-              mmdb.s.setPosition(baseOffset + 4)
-            # else, if left record, we are already in the correct position
-            let n = mmdb.s.readNumber(3)  # read 3 bytes
-            mmdb.s.setPosition(baseOffset + 3)  # go to the middle byte
-            let
-              middle = mmdb.s.readNumber(1).uint8  # read the middle byte
-              pref =
-                if bit == 1:  # right record
-                  middle and 0x0F
-                else:  # left record
-                  (middle and 0xF0) shr 4
-            n + (pref.uint64 shl 24) # prepend to the 3 bytes
-          else:
-            raise newException(ValueError, "Unsupported record size " & $recordSizeBits)
-
+        recordVal = mmdb.s.readNode(bit, recordSizeBits)
       if recordVal < nodeCount:
         let absoluteOffset = recordVal * (nodeSizeBits shr 3)
         mmdb.s.setPosition(absoluteOffset.int)
@@ -425,6 +426,8 @@ proc lookup*(mmdb: MMDB; ipAddrStr: string): MMDBData =
       mmdb.lookup(ipAddrObj.address_v4)
     else:
       mmdb.lookup(padIPv4Address(ipAddrObj.address_v4))
+
+# init #
 
 proc openFile*(mmdb: var MMDB; stream: Stream) =
   mmdb.s = stream
