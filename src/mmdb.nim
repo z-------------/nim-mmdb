@@ -246,7 +246,7 @@ proc readPointer*(s: Stream; value: int): uint64 =
     else:
       raise newException(ValueError, "invalid pointer size " & $size)
 
-proc readNode(s: Stream; bit: uint8; recordSizeBits: uint64): uint64 =
+proc readNode*(s: Stream; bit: uint8; recordSizeBits: uint64): uint64 =
   if recordSizeBits == 24 or recordSizeBits == 32:
     if bit == 1:  # right record
       s.setPosition((recordSizeBits shr 3).int, fspCur)
