@@ -4,7 +4,6 @@ import std/options
 import std/bitops
 import std/net
 import std/streams
-import std/endians
 
 export options
 
@@ -160,6 +159,14 @@ proc `$`*(x: MMDBData): string =
 
 # bit and byte helpers #
 
+when system.cpuEndian == bigEndian:
+  func beToHost32(outp, inp: pointer) = discard
+  func beToHost64(outp, inp: pointer) = discard
+else:
+  import std/endians
+  func beToHost32(outp, inp: pointer) = swapEndian32(outp, inp)
+  func beToHost64(outp, inp: pointer) = swapEndian64(outp, inp)
+
 proc getBit[T: SomeInteger](v: T; bit: BitsRange[T]): uint8 {.inline.} =
   if v.testBit(7 - bit):
     1'u8
@@ -301,7 +308,7 @@ proc decodeDouble(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkDouble)
   var buf: float64
   discard mmdb.s.readData(addr buf, 8)
-  bigEndian64(addr result.doubleVal, addr buf)
+  beToHost64(addr result.doubleVal, addr buf)
 
 proc decodeBytes(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkBytes)
@@ -322,7 +329,7 @@ proc decodeI32(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkI32)
   var buf: int32
   discard mmdb.s.readData((addr buf) +@ (4 - size), size)
-  bigEndian32(addr result.i32Val, addr buf)
+  beToHost32(addr result.i32Val, addr buf)
 
 proc decodeMap(mmdb: MMDB; entryCount: int): MMDBData =
   result = MMDBData(kind: mdkMap)
@@ -346,7 +353,7 @@ proc decodeFloat(mmdb: MMDB; _: int): MMDBData =
   result = MMDBData(kind: mdkFloat)
   var buf: float32
   discard mmdb.s.readData(addr buf, 4)
-  bigEndian32(addr result.floatVal, addr buf)
+  beToHost32(addr result.floatVal, addr buf)
 
 proc decode*(mmdb: MMDB): MMDBData =
   let (dataKind, dataSize) = mmdb.s.readControlByte()
