@@ -172,9 +172,9 @@ proc padIPv4Address(ipv4: array[0..3, uint8]): array[0..15, uint8] =
   for i in 0..3:
     result[12 + i] = ipv4[i]
 
-proc `+@`(p: pointer; offset: int): pointer =
+proc `+@`[T](p: ptr T; offset: int): ptr T =
   ## Pointer offset
-  cast[pointer](cast[ByteAddress](p) + offset)
+  cast[ptr T](cast[ByteAddress](p) + offset)
 
 # stream helpers #
 
