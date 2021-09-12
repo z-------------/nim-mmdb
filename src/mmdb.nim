@@ -1,10 +1,10 @@
-import tables
-import hashes
-import options
-import bitops
-import net
-import streams
-import endians
+import std/tables
+import std/hashes
+import std/options
+import std/bitops
+import std/net
+import std/streams
+import std/endians
 
 export options
 
@@ -40,7 +40,7 @@ type
     of mdkU16, mdkU32, mdkU64:
       u64Val*: uint64
     of mdkU128:
-      u128Val*: string  # any better ideas?
+      u128Val*: string # any better ideas?
     of mdkI32:
       i32Val*: int32
     of mdkMap:
@@ -214,9 +214,9 @@ proc readControlByte*(s: Stream): (MMDBDataKind, int) =
   let controlByte = s.readByte()
   var
     dataFormat = controlByte shr 5
-    dataSize = (controlByte and 31).int  # 0d31 = 0b00011111
+    dataSize = (controlByte and 31).int # 0d31 = 0b00011111
 
-  if dataFormat == 0:  # extended
+  if dataFormat == 0: # extended
     dataFormat = 7 + s.readByte()
 
   if dataSize == 29:
@@ -248,23 +248,23 @@ proc readPointer*(s: Stream; value: int): uint64 =
 
 proc readNode*(s: Stream; bit: uint8; recordSizeBits: uint64): uint64 =
   if recordSizeBits == 24 or recordSizeBits == 32:
-    if bit == 1:  # right record
+    if bit == 1: # right record
       s.setPosition((recordSizeBits shr 3).int, fspCur)
     # else, if left record, we are already in the correct position
     s.readNumber((recordSizeBits shr 3).int)
   elif recordSizeBits == 28:
     let baseOffset = s.getPosition()
-    if bit == 1:  # right record
+    if bit == 1: # right record
       s.setPosition(baseOffset + 4)
     # else, if left record, we are already in the correct position
-    let n = s.readNumber(3)  # read 3 bytes
-    s.setPosition(baseOffset + 3)  # go to the middle byte
+    let n = s.readNumber(3) # read 3 bytes
+    s.setPosition(baseOffset + 3) # go to the middle byte
     let
-      middle = s.readNumber(1).uint8  # read the middle byte
+      middle = s.readNumber(1).uint8 # read the middle byte
       pref =
-        if bit == 1:  # right record
+        if bit == 1: # right record
           middle and 0x0F
-        else:  # left record
+        else: # left record
           (middle and 0xF0) shr 4
     n + (pref.uint64 shl 24) # prepend to the 3 bytes
   else:
@@ -275,7 +275,7 @@ proc decode*(mmdb: MMDB): MMDBData
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
     metadata = mmdb.metadata.get
-    dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) shr 3) * metadata["node_count"].u64Val  # given formula
+    dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) shr 3) * metadata["node_count"].u64Val # given formula
     p = readPointer(mmdb.s, value)
     absoluteOffset = dataSectionStart + p
     localPos = mmdb.s.getPosition()
@@ -391,9 +391,9 @@ proc doLookup(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
     recordSizeBits: uint64 = metadata["record_size"].u64Val
     nodeSizeBits: uint64 = 2 * recordSizeBits
     nodeCount: uint64 = metadata["node_count"].u64Val
-    treeSize: uint64 = (recordSizeBits shr 2) * nodeCount  # shl 1, shr 3
+    treeSize: uint64 = (recordSizeBits shr 2) * nodeCount # shl 1, shr 3
 
-  mmdb.s.setPosition(0)  # go to root node
+  mmdb.s.setPosition(0) # go to root node
 
   for b in ipAddr:
     for j in 0..<8:
@@ -406,7 +406,7 @@ proc doLookup(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
       elif recordVal == nodeCount:
         raise newException(KeyError, "IP address does not exist in database")
       else: # recordVal > nodeCount
-        let absoluteOffset = (recordVal - nodeCount) + treeSize  # given formula
+        let absoluteOffset = (recordVal - nodeCount) + treeSize # given formula
         mmdb.s.setPosition(absoluteOffset.int)
         return mmdb.decode()
 
