@@ -13,7 +13,7 @@ const
 
 type
   MMDBDataKind* = enum
-    mdkNone = 0  # discriminant must start from 0
+    mdkNone
     mdkPointer = 1
     mdkString = 2
     mdkDouble = 3
@@ -25,11 +25,13 @@ type
     mdkU64 = 9
     mdkU128 = 10
     mdkArray = 11
+    mdkInvalid12
+    mdkInvalid13
     mdkBoolean = 14
     mdkFloat = 15
   MMDBData* = object
     case kind*: MMDBDataKind
-    of mdkNone, mdkPointer:
+    of mdkPointer:
       discard
     of mdkString:
       stringVal*: string
@@ -51,6 +53,8 @@ type
       booleanVal*: bool
     of mdkFloat:
       floatVal*: float32
+    else:
+      discard
   MMDB* = object
     metadata*: Option[MMDBData]
     s*: Stream
@@ -62,7 +66,7 @@ proc hash*(x: MMDBData): Hash =
   var h: Hash = 0
   h = h !& x.kind.ord
   let atomHash = case x.kind
-    of mdkNone, mdkPointer:
+    of mdkPointer:
       0.hash
     of mdkString:
       x.stringVal.hash
@@ -87,6 +91,8 @@ proc hash*(x: MMDBData): Hash =
       x.booleanVal.hash
     of mdkFloat:
       x.floatVal.hash
+    else:
+      0.hash
   h = h !& atomHash
   result = !$h
 
@@ -127,7 +133,7 @@ proc `[]`*(x: MMDBData; key: string): MMDBData =
 
 proc `$`*(x: MMDBData): string =
   case x.kind
-  of mdkNone, mdkPointer:
+  of mdkPointer:
     $x
   of mdkString:
     $x.stringVal
@@ -149,6 +155,8 @@ proc `$`*(x: MMDBData): string =
     $x.booleanVal
   of mdkFloat:
     $x.floatVal
+  else:
+    $x
 
 # bit and byte helpers #
 
