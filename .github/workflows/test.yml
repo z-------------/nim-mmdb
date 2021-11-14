@@ -8,14 +8,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nimVersion: ["1.4.4", "stable"]
+        nimGc: ["arc", "orc", "refc"]
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: true
       - uses: jiro4989/setup-nim-action@v1
         with:
-          nim-version: "1.4.4"
-      - run: nimble test -Y
-      - run: nimble test -Y --gc:arc
-      - run: nimble test -Y --gc:orc
-      - run: nimble test -Y --gc:refc
+          nim-version: ${{ matrix.nimVersion }}
+      - run: nimble test -Y --gc:${{ matrix.nimGc }}
