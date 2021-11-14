@@ -398,7 +398,7 @@ proc readMetadata(mmdb: var MMDB) =
   mmdb.nodeSizeBits = 2 * mmdb.recordSizeBits
   mmdb.nodeCount = mmdb.metadata.get["node_count"].u64Val
   mmdb.treeSize = (mmdb.recordSizeBits shr 2) * mmdb.nodeCount # shl 1, shr 3
-  mmdb.dataSectionStart = 16 + ((mmdb.metadata.get["record_size"].u64Val * 2) shr 3) * mmdb.metadata.get["node_count"].u64Val # given formula
+  mmdb.dataSectionStart = 16 + ((mmdb.recordSizeBits * 2) shr 3) * mmdb.nodeCount # given formula
 
 template checkMetadataValid(mmdb: MMDB): untyped =
   if mmdb.metadata.isNone:
