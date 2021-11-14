@@ -58,6 +58,10 @@ type
     metadata*: Option[MMDBData]
     s*: Stream
     size: int
+    recordSizeBits: uint64
+    nodeSizeBits: uint64
+    nodeCount: uint64
+    treeSize: uint64
 
 # MMDBData methods #
 
@@ -391,6 +395,11 @@ proc readMetadata(mmdb: var MMDB) =
   mmdb.s.setPosition(mmdb.getMetadataPos())
   mmdb.metadata = some(mmdb.decode())
 
+  mmdb.recordSizeBits = mmdb.metadata.get["record_size"].u64Val
+  mmdb.nodeSizeBits = 2 * mmdb.recordSizeBits
+  mmdb.nodeCount = mmdb.metadata.get["node_count"].u64Val
+  mmdb.treeSize = (mmdb.recordSizeBits shr 2) * mmdb.nodeCount # shl 1, shr 3
+
 template checkMetadataValid(mmdb: MMDB): untyped =
   if mmdb.metadata.isNone:
     raise newException(ValueError, "No database is open.")
@@ -400,27 +409,20 @@ template checkMetadataValid(mmdb: MMDB): untyped =
 # lookup #
 
 proc doLookup(mmdb: MMDB; ipAddr: openArray[uint8]): MMDBData =
-  let
-    metadata = mmdb.metadata.get
-    recordSizeBits: uint64 = metadata["record_size"].u64Val
-    nodeSizeBits: uint64 = 2 * recordSizeBits
-    nodeCount: uint64 = metadata["node_count"].u64Val
-    treeSize: uint64 = (recordSizeBits shr 2) * nodeCount # shl 1, shr 3
-
   mmdb.s.setPosition(0) # go to root node
 
   for b in ipAddr:
     for j in 0..<8:
       let
         bit = b.getBit(j)
-        recordVal = mmdb.s.readNode(bit, recordSizeBits)
-      if recordVal < nodeCount:
-        let absoluteOffset = recordVal * (nodeSizeBits shr 3)
+        recordVal = mmdb.s.readNode(bit, mmdb.recordSizeBits)
+      if recordVal < mmdb.nodeCount:
+        let absoluteOffset = recordVal * (mmdb.nodeSizeBits shr 3)
         mmdb.s.setPosition(absoluteOffset.int)
-      elif recordVal == nodeCount:
+      elif recordVal == mmdb.nodeCount:
         raise newException(KeyError, "IP address does not exist in database")
       else: # recordVal > nodeCount
-        let absoluteOffset = (recordVal - nodeCount) + treeSize # given formula
+        let absoluteOffset = (recordVal - mmdb.nodeCount) + mmdb.treeSize # given formula
         mmdb.s.setPosition(absoluteOffset.int)
         return mmdb.decode()
 
