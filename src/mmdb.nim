@@ -179,9 +179,9 @@ proc padIPv4Address(ipv4: array[0..3, uint8]): array[0..15, uint8] =
   for i in 0..3:
     result[12 + i] = ipv4[i]
 
-proc `+@`[T](p: ptr T; offset: int): ptr T =
+proc `+@`(p: pointer; offset: int): pointer =
   ## Pointer offset
-  cast[ptr T](cast[ByteAddress](p) + offset)
+  cast[pointer](cast[ByteAddress](p) + offset)
 
 # stream helpers #
 
@@ -219,9 +219,8 @@ template readByte(s: Stream): uint8 =
   s.readUint8()
 
 proc readNumber(s: Stream; size: int): uint64 =
-  for i in countdown(size - 1, 0):
-    let n = s.readUint8()
-    result = result or (n.uint64 shl (i * 8))
+  discard s.readData((addr result) +@ (sizeof(result) - size), size)
+  beToHost64(addr result, addr result)
 
 # data decode #
 
