@@ -62,6 +62,7 @@ type
     nodeSizeBits: uint64
     nodeCount: uint64
     treeSize: uint64
+    dataSectionStart: uint64
 
 # MMDBData methods #
 
@@ -292,10 +293,8 @@ proc decode*(mmdb: MMDB): MMDBData
 
 proc decodePointer(mmdb: MMDB; value: int): MMDBData =
   let
-    metadata = mmdb.metadata.get
-    dataSectionStart = 16 + ((metadata["record_size"].u64Val * 2) shr 3) * metadata["node_count"].u64Val # given formula
     p = readPointer(mmdb.s, value)
-    absoluteOffset = dataSectionStart + p
+    absoluteOffset = mmdb.dataSectionStart + p
     localPos = mmdb.s.getPosition()
 
   mmdb.s.setPosition(absoluteOffset.int)
@@ -399,6 +398,7 @@ proc readMetadata(mmdb: var MMDB) =
   mmdb.nodeSizeBits = 2 * mmdb.recordSizeBits
   mmdb.nodeCount = mmdb.metadata.get["node_count"].u64Val
   mmdb.treeSize = (mmdb.recordSizeBits shr 2) * mmdb.nodeCount # shl 1, shr 3
+  mmdb.dataSectionStart = 16 + ((mmdb.metadata.get["record_size"].u64Val * 2) shr 3) * mmdb.metadata.get["node_count"].u64Val # given formula
 
 template checkMetadataValid(mmdb: MMDB): untyped =
   if mmdb.metadata.isNone:
