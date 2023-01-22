@@ -13,7 +13,7 @@ jobs:
         nimVersion: ["1.4.4", "stable"]
         nimGc: ["arc", "orc", "refc"]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: true
       - uses: jiro4989/setup-nim-action@v1
