@@ -134,11 +134,11 @@ proc `==`*(a, b: MMDBData): bool =
       true
 
 proc `==`*(a: MMDBData; b: uint64): bool =
-  assert a.kind == mdkU16 or a.kind == mdkU32 or a.kind == mdkU64
+  assert a.kind in {mdkU16, mdkU32, mdkU64}
   a.u64Val == b
 
 proc `>`*(a: MMDBData; b: uint64): bool =
-  assert a.kind == mdkU16 or a.kind == mdkU32 or a.kind == mdkU64
+  assert a.kind in {mdkU16, mdkU32, mdkU64}
   a.u64Val > b
 
 proc `==`*(a: MMDBData; b: string): bool =
