@@ -182,7 +182,7 @@ proc `$`*(x: MMDBData): string =
   of mdkFloat:
     $x.floatVal
   of mdkPointer, mdkNone, mdkInvalid12, mdkInvalid13:
-    $x
+    system.`$`(x)
 
 # bit and byte helpers #
 
