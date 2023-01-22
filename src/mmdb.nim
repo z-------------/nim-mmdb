@@ -52,7 +52,7 @@ type
       booleanVal*: bool
     of mdkFloat:
       floatVal*: float32
-    else:
+    of mdkNone, mdkInvalid12, mdkInvalid13:
       discard
   MMDB* = object
     metadata*: Option[MMDBData]
@@ -95,7 +95,7 @@ proc hash*(x: MMDBData): Hash =
       x.booleanVal.hash
     of mdkFloat:
       x.floatVal.hash
-    else:
+    of mdkNone, mdkInvalid12, mdkInvalid13:
       0.hash
   h = h !& atomHash
   result = !$h
@@ -159,7 +159,7 @@ proc `$`*(x: MMDBData): string =
     $x.booleanVal
   of mdkFloat:
     $x.floatVal
-  else:
+  of mdkNone, mdkInvalid12, mdkInvalid13:
     $x
 
 # bit and byte helpers #
@@ -382,7 +382,7 @@ proc decode*(mmdb: MMDB): MMDBData =
       mmdb.decodeBoolean(dataSize)
     of mdkFloat:
       mmdb.decodeFloat(dataSize)
-    else:
+    of mdkNone, mdkInvalid12, mdkInvalid13:
       raise newException(ValueError, "Can't deal with format " & $dataKind)
 
 # metadata #
