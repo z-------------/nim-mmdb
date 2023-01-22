@@ -30,8 +30,6 @@ type
     mdkFloat = 15
   MMDBData* = object
     case kind*: MMDBDataKind
-    of mdkPointer:
-      discard
     of mdkString:
       stringVal*: string
     of mdkDouble:
@@ -52,7 +50,7 @@ type
       booleanVal*: bool
     of mdkFloat:
       floatVal*: float32
-    of mdkNone, mdkInvalid12, mdkInvalid13:
+    of mdkPointer, mdkNone, mdkInvalid12, mdkInvalid13:
       discard
   MMDB* = object
     metadata*: Option[MMDBData]
@@ -70,8 +68,6 @@ proc hash*(x: MMDBData): Hash =
   var h: Hash = 0
   h = h !& x.kind.ord
   let atomHash = case x.kind
-    of mdkPointer:
-      0.hash
     of mdkString:
       x.stringVal.hash
     of mdkDouble:
@@ -95,7 +91,7 @@ proc hash*(x: MMDBData): Hash =
       x.booleanVal.hash
     of mdkFloat:
       x.floatVal.hash
-    of mdkNone, mdkInvalid12, mdkInvalid13:
+    of mdkPointer, mdkNone, mdkInvalid12, mdkInvalid13:
       0.hash
   h = h !& atomHash
   result = !$h
@@ -108,8 +104,6 @@ proc `==`*(a, b: MMDBData): bool =
     false
   else:
     case a.kind
-    of mdkPointer:
-      true
     of mdkString:
       eq stringVal
     of mdkDouble:
@@ -130,7 +124,7 @@ proc `==`*(a, b: MMDBData): bool =
       eq booleanVal
     of mdkFloat:
       eq floatVal
-    of mdkNone, mdkInvalid12, mdkInvalid13:
+    of mdkPointer, mdkNone, mdkInvalid12, mdkInvalid13:
       true
 
 proc `==`*(a: MMDBData; b: uint64): bool =
@@ -167,8 +161,6 @@ proc `[]`*(x: MMDBData; key: string): MMDBData =
 
 proc `$`*(x: MMDBData): string =
   case x.kind
-  of mdkPointer:
-    $x
   of mdkString:
     $x.stringVal
   of mdkDouble:
@@ -189,7 +181,7 @@ proc `$`*(x: MMDBData): string =
     $x.booleanVal
   of mdkFloat:
     $x.floatVal
-  of mdkNone, mdkInvalid12, mdkInvalid13:
+  of mdkPointer, mdkNone, mdkInvalid12, mdkInvalid13:
     $x
 
 # bit and byte helpers #
