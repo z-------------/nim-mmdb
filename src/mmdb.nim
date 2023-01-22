@@ -101,7 +101,37 @@ proc hash*(x: MMDBData): Hash =
   result = !$h
 
 proc `==`*(a, b: MMDBData): bool =
-  a.hash == b.hash
+  template eq(fieldName: untyped): bool =
+    a.fieldName == b.fieldName
+
+  if a.kind != b.kind:
+    false
+  else:
+    case a.kind
+    of mdkPointer:
+      true
+    of mdkString:
+      eq stringVal
+    of mdkDouble:
+      eq doubleVal
+    of mdkBytes:
+      eq bytesVal
+    of mdkU16, mdkU32, mdkU64:
+      eq u64Val
+    of mdkU128:
+      eq u128Val
+    of mdkI32:
+      eq i32Val
+    of mdkMap:
+      eq mapVal
+    of mdkArray:
+      eq arrayVal
+    of mdkBoolean:
+      eq booleanVal
+    of mdkFloat:
+      eq floatVal
+    of mdkNone, mdkInvalid12, mdkInvalid13:
+      true
 
 proc `==`*(a: MMDBData; b: uint64): bool =
   assert a.kind == mdkU16 or a.kind == mdkU32 or a.kind == mdkU64
