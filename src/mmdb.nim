@@ -96,7 +96,7 @@ proc hash*(x: MMDBData): Hash =
   h = h !& atomHash
   result = !$h
 
-proc `==`*(a, b: MMDBData): bool =
+func `==`*(a, b: MMDBData): bool =
   template eq(fieldName: untyped): bool =
     a.fieldName == b.fieldName
 
@@ -208,7 +208,7 @@ proc padIPv4Address(ipv4: array[0..3, uint8]): array[0..15, uint8] =
 
 proc `+@`(p: pointer; offset: int): pointer =
   ## Pointer offset
-  cast[pointer](cast[ByteAddress](p) + offset)
+  cast[pointer](cast[int](p) + offset)
 
 # stream helpers #
 
