@@ -248,8 +248,10 @@ template readByte(s: Stream): uint8 =
   s.readUint8()
 
 proc readNumber(s: Stream; size: int): uint64 =
-  discard s.readData((addr result) +@ (sizeof(result) - size), size)
+  let size = min(size, sizeof(result))
+  discard s.readData(addr result, size)
   beToHost64(addr result, addr result)
+  result = result shr (8 * (sizeof(result) - size))
 
 # data decode #
 
