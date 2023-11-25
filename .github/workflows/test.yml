@@ -7,11 +7,19 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        nimVersion: ["1.4.4", "stable"]
-        nimGc: ["arc", "orc", "refc"]
+        os:
+          - ubuntu-latest
+          - windows-latest
+        nimVersion:
+          - stable
+          - 1.4.4
+        nimGc:
+          - orc
+          - arc
+          - refc
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
         with:
