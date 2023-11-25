@@ -248,7 +248,7 @@ template readByte(s: Stream): uint8 =
   s.readUint8()
 
 proc readNumber(s: Stream; size: int): uint64 =
-  let size = min(size, sizeof(result))
+  let size = size.clamp(0, sizeof(result))
   discard s.readData(addr result, size)
   beToHost64(addr result, addr result)
   result = result shr (8 * (sizeof(result) - size))
@@ -355,8 +355,9 @@ proc decodeU128(mmdb: MMDB; size: int): MMDBData =
 
 proc decodeI32(mmdb: MMDB; size: int): MMDBData =
   result = MMDBData(kind: mdkI32)
-  var buf: int32
-  discard mmdb.s.readData((addr buf) +@ (4 - size), size)
+  var buf = 0'i32
+  let size = size.clamp(0, sizeof(buf))
+  discard mmdb.s.readData((addr buf) +@ (sizeof(buf) - size), size)
   beToHost32(addr result.i32Val, addr buf)
 
 proc decodeMap(mmdb: MMDB; entryCount: int): MMDBData =
