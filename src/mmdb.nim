@@ -1,9 +1,11 @@
-import std/tables
-import std/hashes
-import std/options
-import std/bitops
-import std/net
-import std/streams
+import std/[
+  bitops,
+  hashes,
+  net,
+  options,
+  streams,
+  tables,
+]
 
 export options
 
