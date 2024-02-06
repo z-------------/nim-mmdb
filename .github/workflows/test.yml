@@ -21,7 +21,7 @@ jobs:
           - refc
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: jiro4989/setup-nim-action@v1
