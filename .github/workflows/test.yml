@@ -1,10 +1,9 @@
 name: Test
-
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
   workflow_dispatch:
-
 jobs:
   test:
     strategy:
@@ -14,8 +13,8 @@ jobs:
           - windows-latest
         nimVersion:
           - stable
-          - 1.4.4
-        nimGc:
+          - 1.6.20
+        nimMm:
           - orc
           - arc
           - refc
@@ -27,4 +26,4 @@ jobs:
       - uses: jiro4989/setup-nim-action@v1
         with:
           nim-version: ${{ matrix.nimVersion }}
-      - run: nimble test -Y --gc:${{ matrix.nimGc }}
+      - run: nimble test -Y --mm:${{ matrix.nimMm }}
