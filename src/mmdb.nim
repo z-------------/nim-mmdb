@@ -247,9 +247,10 @@ template readBytes(s: Stream; size: int): string =
 template readByte(s: Stream): uint8 =
   s.readUint8()
 
-proc readNumber(s: Stream; size: int): uint64 =
+proc readNumber(s: Stream; size: int): uint64 {.raises: [IOError, OSError].} =
   let size = size.clamp(0, sizeof(result))
-  discard s.readData(addr result, size)
+  if s.readData(addr result, size) != size:
+    raise newException(IOError, "Not enough data left to read " & $size & " bytes")
   beToHost64(addr result, addr result)
   result = result shr (8 * (sizeof(result) - size))
 
